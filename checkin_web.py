@@ -5,7 +5,6 @@
 # - 本機模式：程式資料夾有「釣蝦報名表.xlsx」就直接讀寫它
 # - 雲端模式：沒有本機檔案時，從側欄上傳報名表，結果用下載按鈕取回
 # 啟動：streamlit run checkin_web.py
-import csv
 import html
 import os
 import threading
@@ -330,17 +329,25 @@ div[data-testid="InputInstructions"] {{ display:none; }}
 .st-key-card {{ background:{card_color}; border-radius:12px; padding:1.4vh 1.4vw;
     height:{c}vh; max-height:{c}vh; flex:0 0 auto; overflow:hidden; }}
 .st-key-card [data-testid="stVerticalBlock"] {{ gap:.6vh; }}
+.st-key-cardleft, [data-testid="stLayoutWrapper"]:has(> .st-key-cardleft) {{
+    height:calc({c}vh - 4vh) !important; flex:0 0 auto !important; }}
+.st-key-cardleft {{ display:flex; flex-direction:column; }}
+.st-key-cardleft > [data-testid="stLayoutWrapper"]:has(> .st-key-actions),
+.st-key-cardleft > div:has(> .st-key-actions) {{ margin-top:auto !important; }}
+.st-key-actions {{ gap:.5vh !important; opacity:.92; }}
+.st-key-actions .help {{ font-size:1.8vh !important; padding:.4vh 1vw; }}
+.st-key-actions .stButton button, .st-key-actions .stButton button p {{ font-size:2vh !important; }}
 .state {{ color:#fff; font-size:3.9vh; font-weight:800; text-align:center; margin-bottom:.3vh; }}
 .pname {{ color:#fff; font-weight:800; text-align:center; line-height:1.15; }}
 .psub {{ color:#fff; font-size:2.6vh; text-align:center; margin-bottom:1vh; }}
 .tbl {{ background:#fff; border-radius:8px; text-align:center; padding:1.2vh .5vw;
     height:calc({c}vh - 4vh); box-sizing:border-box; display:flex; flex-direction:column;
     justify-content:space-evenly; }}
-.tbl .cap {{ color:#0B1E33; font-size:3.2vh; font-weight:800; }}
-.tbl .num {{ color:#0B1E33; font-size:14vh; font-weight:900; line-height:1; }}
+.tbl .cap {{ color:#0B1E33; font-size:3.8vh; font-weight:800; }}
+.tbl .num {{ color:#0B1E33; font-size:11vh; font-weight:900; line-height:1.05; white-space:nowrap; }}
 .tbl .none {{ color:#B03A2E; font-size:2.9vh; font-weight:800; }}
 .tbl .sep {{ border-top:2px dashed #AEB6BF; margin:0 .6vw; }}
-.tbl .pnum {{ color:#1F5F8B; font-weight:900; line-height:1.1; }}
+.tbl .pnum {{ color:#1F5F8B; }}
 .tbl .pnone {{ color:#7F8C8D; font-size:2.4vh; font-weight:700; }}
 .mrow {{ display:flex; align-items:center; gap:1vw; color:#fff; flex-wrap:wrap; line-height:1.5; }}
 .mrow .mk {{ width:3vh; font-weight:800; }}
@@ -464,8 +471,8 @@ def render_table(p):
         tbl = '<div class="none">未安排<br>請洽承辦人</div>'
     ps = ponds(active(p))
     if ps:
-        size = 8.5 if len(ps) == 1 else 6
-        pond = f'<div class="pnum" style="font-size:{size}vh">{"・".join(map(html.escape, ps))}</div>'
+        # 蝦池數字與桌號同大小（兩個池時用「・」分隔）
+        pond = f'<div class="num pnum">{"・".join(map(html.escape, ps))}</div>'
     else:
         pond = '<div class="pnone">陪釣（無蝦池）</div>'
     st.markdown(f'<div class="tbl"><div class="cap">桌號</div>{tbl}'
@@ -564,7 +571,8 @@ def render_card(state):
         left, right = st.columns([3, 1.1])
         with right:
             render_table(p)
-        with left:
+        # 左半部：上面是人員資訊（重點），按鈕與操作提示固定在卡片最下方
+        with left, st.container(key="cardleft"):
             if kind == "pick":
                 n_sel = sum(1 for i, m in enumerate(p["成員"])
                             if not m["報到時間"] and not m["取消"]
@@ -574,35 +582,39 @@ def render_card(state):
                 render_members_pick(state, p, v)
                 if v.get("note"):
                     st.markdown(f'<div class="note">{v["note"]}</div>', unsafe_allow_html=True)
-                b1, b2, _ = st.columns([1.2, 0.8, 2])
-                b1.button("✔ 確認報到", type="primary", on_click=confirm_pick, args=(state,),
-                          width="stretch")
-                b2.button("取消", on_click=cancel, width="stretch")
-                if arrived(p):   # 補報到時，也可以改已到的人
-                    b3 = st.columns([1.2, 2.8])[0]
-                    b3.button("📝 修改已報到的人", on_click=start_edit, args=(state, p["工號"]),
+                with st.container(key="actions"):
+                    if arrived(p):   # 補報到時，也可以改已到的人
+                        b1, b2, b3, _ = st.columns([1.1, 0.7, 1.4, 0.8])
+                        b3.button("📝 修改已報到的人", on_click=start_edit, args=(state, p["工號"]),
+                                  width="stretch")
+                    else:
+                        b1, b2, _ = st.columns([1.1, 0.7, 2.2])
+                    b1.button("✔ 確認報到", type="primary", on_click=confirm_pick, args=(state,),
                               width="stretch")
-                confirm = "再刷一次卡 或 Enter 確認" if v["how"] == "card" else "空白 Enter 確認"
-                st.markdown(f'<div class="help">勾選：點名字，或輸入編號＋Enter　｜　{confirm}</div>',
-                            unsafe_allow_html=True)
+                    b2.button("取消", on_click=cancel, width="stretch")
+                    confirm = "再刷一次卡 或 Enter 確認" if v["how"] == "card" else "空白 Enter 確認"
+                    st.markdown(f'<div class="help">勾選：點名字，或輸入編號＋Enter　｜　{confirm}</div>',
+                                unsafe_allow_html=True)
             elif kind == "edit":
                 n_sel = sum(1 for i, m in enumerate(p["成員"])
                             if not m["取消"] and st.session_state.get(chk_key(v, i)))
                 render_party_header(p, f"📝　修改報到：勾選實際到場的人（已勾 {n_sel} 位）", "pick")
                 render_members_pick(state, p, v)
-                b1, b2, _ = st.columns([1.2, 0.8, 2])
-                b1.button("✔ 儲存修改", type="primary", on_click=save_edit, args=(state,),
-                          width="stretch")
-                b2.button("取消", on_click=cancel, width="stretch")
-                st.markdown('<div class="help">取消勾選＝撤銷報到　｜　勾選＝補上報到　｜　空白 Enter 儲存</div>',
-                            unsafe_allow_html=True)
+                with st.container(key="actions"):
+                    b1, b2, _ = st.columns([1.1, 0.7, 2.2])
+                    b1.button("✔ 儲存修改", type="primary", on_click=save_edit, args=(state,),
+                              width="stretch")
+                    b2.button("取消", on_click=cancel, width="stretch")
+                    st.markdown('<div class="help">取消勾選＝撤銷報到　｜　勾選＝補上報到　｜　空白 Enter 儲存</div>',
+                                unsafe_allow_html=True)
             elif kind in ("ok", "dup"):
                 title = f"✔　{v['title']}" if kind == "ok" else f"⚠　已於 {v['t']} 報到過"
                 render_party_header(p, title)
                 render_members_static(p)
                 if v.get("note"):
                     st.markdown(f'<div class="note">{v["note"]}</div>', unsafe_allow_html=True)
-                st.button("📝 修改報到", key="edit_btn", on_click=start_edit, args=(state, p["工號"]))
+                with st.container(key="actions"):
+                    st.button("📝 修改報到", key="edit_btn", on_click=start_edit, args=(state, p["工號"]))
 
 
 def render_recent(state):
@@ -697,9 +709,8 @@ def sidebar(state):
         st.caption(f"{len(rows)} 組")
         st.dataframe(rows, hide_index=True, width="stretch")
     with sb.expander("異常紀錄"):
-        with open(state["log"].path, newline="", encoding="utf-8-sig") as f:
-            rows = [{k: r[k] for k in ("時間", "結果", "輸入內容", "姓名", "附註")}
-                    for r in csv.DictReader(f) if r["結果"] != "報到成功"]
+        rows = [{k: r.get(k, "") for k in ("時間", "結果", "輸入內容", "姓名", "附註")}
+                for r in state["log"].rows() if r.get("結果") not in ("報到成功", "修改報到")]
         st.caption(f"{len(rows)} 筆")
         st.dataframe(rows, hide_index=True, width="stretch")
     if roster.warnings:

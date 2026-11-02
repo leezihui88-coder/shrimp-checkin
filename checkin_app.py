@@ -4,7 +4,6 @@
 # - 每位參加人各自記錄報到狀態，寫回報名表最後面的新增欄位
 # - 每筆報到即時寫入 CSV 紀錄，Excel 被開啟無法寫入時自動重試
 # - 不開放現場加入；查無資料記入異常紀錄
-import csv
 import os
 import sys
 import time
@@ -45,7 +44,8 @@ SUB = "#9FB6CC"
 ACCENT = "#2E9CCA"
 STATE_COLOR = {"ok": "#1E8449", "dup": "#B9770E", "err": "#B03A2E",
                "pick": "#1F5F8B", "edit": "#6C3483", "idle": PANEL}
-EDIT_TIMEOUT = 60          # 修改畫面無人操作幾秒後放棄修改（不會自動儲存）
+TBL_CAP, TBL_NUM = 22, 46  # 右側白框：「桌號」「蝦池」標題與數字字級（兩者相同）
+EDIT_TIMEOUT = 60         # 修改畫面無人操作幾秒後放棄修改（不會自動儲存）
 FONT = "Microsoft JhengHei UI"
 NUMPAD_KEYCODES = {96 + i: i for i in range(10)}   # Windows 數字鍵盤 0–9
 
@@ -130,17 +130,19 @@ class App(tk.Tk):
 
         self.table_box = tk.Frame(self.content, bg="#FFFFFF", width=300)
         self.table_box.pack_propagate(False)
-        tk.Label(self.table_box, text="桌號", font=(FONT, 24, "bold"),
-                 fg="#0B1E33", bg="#FFFFFF").pack(pady=(20, 0))
-        # 蝦池放在白框下半部
-        self.pond_lbl = tk.Label(self.table_box, font=(FONT, 40, "bold"),
-                                 fg="#1F5F8B", bg="#FFFFFF")
-        self.pond_lbl.pack(side="bottom", pady=(0, 20))
-        tk.Label(self.table_box, text="蝦池", font=(FONT, 24, "bold"),
-                 fg="#0B1E33", bg="#FFFFFF").pack(side="bottom")
-        self.table_lbl = tk.Label(self.table_box, font=(FONT, 90, "bold"),
-                                  fg="#0B1E33", bg="#FFFFFF")
-        self.table_lbl.pack(expand=True)
+        # 白框上下各一半：桌號 / 蝦池，標題與數字大小相同（兩者都是重點）
+        halves = []
+        for cap in ("桌號", "蝦池"):
+            half = tk.Frame(self.table_box, bg="#FFFFFF")
+            half.pack(fill="both", expand=True)
+            tk.Label(half, text=cap, font=(FONT, TBL_CAP, "bold"),
+                     fg="#0B1E33", bg="#FFFFFF").pack(pady=(10, 0))
+            num = tk.Label(half, font=(FONT, TBL_NUM, "bold"), bg="#FFFFFF")
+            num.pack(expand=True)
+            halves.append(num)
+            if cap == "桌號":
+                tk.Frame(self.table_box, bg="#AEB6BF", height=2).pack(fill="x", padx=16)
+        self.table_lbl, self.pond_lbl = halves
 
         self.info = tk.Frame(self.content, bg=PANEL)
         self.info.pack(side="left", fill="both", expand=True)
@@ -257,13 +259,15 @@ class App(tk.Tk):
         # 右側桌號大字
         self.table_box.pack(side="right", fill="y", padx=(24, 0))
         if p["桌號"]:
-            self.table_lbl.config(text=p["桌號"], font=(FONT, 72, "bold"), fg="#0B1E33")
+            self.table_lbl.config(text=p["桌號"], font=(FONT, TBL_NUM, "bold"), fg="#0B1E33")
         else:
-            self.table_lbl.config(text="未安排\n請洽承辦人", font=(FONT, 26, "bold"),
+            self.table_lbl.config(text="未安排\n請洽承辦人", font=(FONT, 22, "bold"),
                                   fg="#B03A2E")
         ps = ponds(active(p))
         if ps:
-            self.pond_lbl.config(text="・".join(ps), font=(FONT, 36 if len(ps) == 1 else 26, "bold"),
+            # 與桌號同大小；兩個池（例如 1・3）字較寬，稍微縮小才放得進白框
+            self.pond_lbl.config(text="・".join(ps),
+                                 font=(FONT, TBL_NUM if len(ps) == 1 else TBL_NUM * 2 // 3, "bold"),
                                  fg="#1F5F8B")
         else:
             self.pond_lbl.config(text="陪釣（無蝦池）", font=(FONT, 16, "bold"), fg="#7F8C8D")
@@ -681,9 +685,8 @@ class App(tk.Tk):
         self.list_window("未報到名單", "桌號\t工號\t\t同仁\t狀態\t\t未到人員", rows)
 
     def show_errors(self):
-        with open(self.log.path, newline="", encoding="utf-8-sig") as f:
-            rows = [f"{r['時間'][11:]}\t{r['結果']}\t{r['輸入內容']}\t{r['姓名']}\t{r['附註']}"
-                    for r in csv.DictReader(f) if r["結果"] != "報到成功"]
+        rows = [f"{r['時間'][11:]}\t{r['結果']}\t{r['輸入內容']}\t{r['姓名']}\t{r['附註']}"
+                for r in self.log.rows() if r.get("結果") not in ("報到成功", "修改報到")]
         self.list_window("異常紀錄", "時間\t\t結果\t輸入內容\t姓名\t附註", rows)
 
     def save_excel(self, manual=False):

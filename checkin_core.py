@@ -323,35 +323,46 @@ class CheckinLog:
 
     def __init__(self, path):
         self.path = path
-        if not os.path.exists(path):
-            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        self._ensure()
+
+    def _ensure(self):
+        """紀錄檔不存在（例如執行中被誤刪）就重建表頭"""
+        if not os.path.exists(self.path):
+            with open(self.path, "w", newline="", encoding="utf-8-sig") as f:
                 csv.DictWriter(f, LOG_FIELDS).writeheader()
 
     def write(self, **kw):
         kw.setdefault("時間", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        self._ensure()
         with open(self.path, "a", newline="", encoding="utf-8-sig") as f:
             csv.DictWriter(f, LOG_FIELDS).writerow({k: kw.get(k, "") for k in LOG_FIELDS})
+
+    def rows(self):
+        """讀出全部紀錄（檔案不存在時回傳空清單）"""
+        if not os.path.exists(self.path):
+            return []
+        with open(self.path, newline="", encoding="utf-8-sig") as f:
+            return list(csv.DictReader(f))
 
     def restore(self, roster):
         """重開程式時，依時間順序重播紀錄檔，補回 Excel 還沒寫到的報到 / 修改（依到場成員姓名）"""
         n = 0
-        with open(self.path, newline="", encoding="utf-8-sig") as f:
-            for row in csv.DictReader(f):
-                result = row.get("結果")
-                if result not in ("報到成功", "修改報到"):
-                    continue
-                emp = row.get("工號") or ""
-                p = roster.by_id.get(emp) or roster.by_id.get(norm_id(emp))
-                if not p:
-                    continue
-                names = set((row.get("到場成員") or "").split("、"))
-                t = datetime.strptime(row["時間"], "%Y-%m-%d %H:%M:%S")
-                how = (row.get("附註") or "工號").split("；")[0]
-                for m in p["成員"]:
-                    if m["姓名"] in names and not m["報到時間"]:
-                        m["報到時間"], m["報到方式"] = t, how
-                        n += 1
-                    elif result == "修改報到" and m["姓名"] not in names and m["報到時間"]:
-                        # 「修改報到」的到場成員是修改後的完整名單，不在名單內的取消報到
-                        m["報到時間"], m["報到方式"] = None, ""
+        for row in self.rows():
+            result = row.get("結果")
+            if result not in ("報到成功", "修改報到"):
+                continue
+            emp = row.get("工號") or ""
+            p = roster.by_id.get(emp) or roster.by_id.get(norm_id(emp))
+            if not p:
+                continue
+            names = set((row.get("到場成員") or "").split("、"))
+            t = datetime.strptime(row["時間"], "%Y-%m-%d %H:%M:%S")
+            how = (row.get("附註") or "工號").split("；")[0]
+            for m in p["成員"]:
+                if m["姓名"] in names and not m["報到時間"]:
+                    m["報到時間"], m["報到方式"] = t, how
+                    n += 1
+                elif result == "修改報到" and m["姓名"] not in names and m["報到時間"]:
+                    # 「修改報到」的到場成員是修改後的完整名單，不在名單內的取消報到
+                    m["報到時間"], m["報到方式"] = None, ""
         return n
