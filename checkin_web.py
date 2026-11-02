@@ -6,13 +6,22 @@
 # - 雲端模式：沒有本機檔案時，從側欄上傳報名表，結果用下載按鈕取回
 # 啟動：streamlit run checkin_web.py
 import html
+import importlib
 import os
 import threading
 import time
 
 import streamlit as st
 
-from checkin_core import (PLAN_COLOR, CheckinLog, Roster, active, all_arrived, arrived,
+# Streamlit 更新程式時只重跑本檔，不會重新載入 checkin_core；
+# 偵測到 checkin_core.py 有更新就手動重新載入，避免新舊版混用而出錯（ImportError）
+import checkin_core as _core
+_core_mtime = os.path.getmtime(_core.__file__)
+if getattr(_core, "_loaded_mtime", None) != _core_mtime:   # 沒有標記（舊版或第一次）也重新載入一次
+    _core = importlib.reload(_core)
+_core._loaded_mtime = _core_mtime
+
+from checkin_core import (PLAN_COLOR, CheckinLog, Roster, active, all_arrived, arrived,  # noqa: E402
                           now, ponds, previous_summary, rod_count, show_id)
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -47,8 +56,8 @@ def registry():
     return {"state": None, "lock": threading.Lock()}
 
 
-def load_state(path, log_path):
-    """載入報名表；本機模式先備份原始檔"""
+def load_state(path, log_path, ask=True):
+    """載入報名表；本機模式先備份原始檔。ask=False：程式更新後重新載入，直接接續不再詢問"""
     reg = registry()
     with reg["lock"]:
         roster = Roster(path)
@@ -59,7 +68,8 @@ def load_state(path, log_path):
         reg["state"] = {"roster": roster, "log": log, "path": path, "backup": bak,
                         "restored": restored, "save_ok": None, "save_msg": "",
                         # 有之前留下的報到資料：開始報到前先問要清除還是接續
-                        "ask_fresh": n_old > 0, "old_count": n_old, "old_last": last}
+                        "ask_fresh": ask and n_old > 0, "old_count": n_old, "old_last": last,
+                        "core_mtime": _core_mtime}
         if restored:
             save_excel(reg["state"])
     return reg["state"]
@@ -121,6 +131,9 @@ def current_state():
     s = reg["state"]
     if s is None or s["path"] != path:
         s = load_state(path, log_path)
+    elif s.get("core_mtime") != _core_mtime:
+        # checkin_core 更新過：用新版重新載入（資料都已寫在 Excel / CSV，直接接續）
+        s = load_state(path, log_path, ask=s.get("ask_fresh", False))
     return s
 
 
