@@ -396,8 +396,8 @@ div[data-testid="InputInstructions"] {{ display:none; }}
 .pond {{ background:#0B1E33; color:#fff; border:2px solid #fff; padding:0 .5vw; border-radius:4px; font-weight:800; }}
 .pond.none {{ background:transparent; border-color:transparent; color:#AEB6BF; }}
 .rod {{ padding:0 .5vw; border-radius:4px; font-weight:800; white-space:nowrap; }}
-.rod.borrow {{ background:#F7DC6F; color:#0B1E33; }}
-.rod.own {{ border:2px solid #fff; color:#fff; }}
+.rod.borrow {{ background:#F7DC6F; color:#0B1E33; border:2px solid #F7DC6F; }}
+.rod.own {{ background:#D6EAF8; color:#0B1E33; border:2px solid #D6EAF8; }}
 .note {{ color:#FDEBD0; font-size:2.4vh; text-align:center; margin-top:.6vh; }}
 .help {{ background:#F7DC6F; color:#0B1E33; font-weight:800; font-size:2.3vh; text-align:center;
          border-radius:6px; padding:.6vh 1vw; }}
