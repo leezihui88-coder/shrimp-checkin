@@ -56,7 +56,8 @@ def load_state(path, log_path):
         restored = log.restore(roster)
         reg["state"] = {"roster": roster, "log": log, "path": path, "backup": bak,
                         "restored": restored, "save_ok": None, "save_msg": "",
-                        "recent": []}
+                        # 開啟時從已報到的資料補回「最近報到」
+                        "recent": [(t, p["工號"], n) for t, p, n in roster.recent()]}
         if restored:
             save_excel(reg["state"])
     return reg["state"]

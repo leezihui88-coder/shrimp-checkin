@@ -59,7 +59,7 @@ class App(tk.Tk):
         self.reset_job = None
         self.save_pending = False      # 寫回 Excel 失敗、等待重試
         self.last_bad_card = None      # (卡號, 時間)：刷卡失敗後改用工號時標註
-        self.recent = []               # 最近報到清單 (時間, 組, 本次人數)
+        self.recent = roster.recent()  # 最近報到清單 (時間, 組, 本次人數)，開啟時從已報到資料補回
         # 勾選中的組：{"party", "how", "checks": [bool], "note", "text"}
         self.pick = None
         self.choices = None            # 姓名搜尋有多組符合時的候選清單
@@ -76,6 +76,7 @@ class App(tk.Tk):
 
         self._build()
         self.refresh_stats()
+        self.render_recent()
         self.show_idle()
         self.tick()
 

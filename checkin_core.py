@@ -246,6 +246,17 @@ class Roster:
                     d[0] += 1
         return s
 
+    def recent(self, limit=15):
+        """已報到的紀錄（同一組同一時間報到的算一筆），新的在前：[(時間, 組, 人數)]"""
+        rows = []
+        for p in self.parties:
+            times = {}
+            for m in arrived(p):
+                times[m["報到時間"]] = times.get(m["報到時間"], 0) + 1
+            rows += [(t, p, n) for t, n in times.items()]
+        rows.sort(key=lambda x: x[0], reverse=True)
+        return rows[:limit]
+
     def confirm(self, p, checks, how):
         """依勾選結果報到，回傳本次新報到的成員（已到過的人不會重複記錄）"""
         now = datetime.now().replace(microsecond=0)
