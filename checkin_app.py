@@ -12,7 +12,8 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox
 
-from checkin_core import PLAN_COLOR, RESULT_COLS, CheckinLog, Roster, arrived
+from checkin_core import (PLAN_COLOR, RESULT_COLS, CheckinLog, Roster, active, all_arrived,
+                          arrived, ponds, rod_count, show_id)
 
 try:
     import winsound
@@ -125,9 +126,15 @@ class App(tk.Tk):
 
         self.table_box = tk.Frame(self.content, bg="#FFFFFF", width=300)
         self.table_box.pack_propagate(False)
-        tk.Label(self.table_box, text="桌號", font=(FONT, 26, "bold"),
-                 fg="#0B1E33", bg="#FFFFFF").pack(pady=(26, 0))
-        self.table_lbl = tk.Label(self.table_box, font=(FONT, 110, "bold"),
+        tk.Label(self.table_box, text="桌號", font=(FONT, 24, "bold"),
+                 fg="#0B1E33", bg="#FFFFFF").pack(pady=(20, 0))
+        # 蝦池放在白框下半部
+        self.pond_lbl = tk.Label(self.table_box, font=(FONT, 40, "bold"),
+                                 fg="#1F5F8B", bg="#FFFFFF")
+        self.pond_lbl.pack(side="bottom", pady=(0, 20))
+        tk.Label(self.table_box, text="蝦池", font=(FONT, 24, "bold"),
+                 fg="#0B1E33", bg="#FFFFFF").pack(side="bottom")
+        self.table_lbl = tk.Label(self.table_box, font=(FONT, 90, "bold"),
                                   fg="#0B1E33", bg="#FFFFFF")
         self.table_lbl.pack(expand=True)
 
@@ -235,10 +242,16 @@ class App(tk.Tk):
         # 右側桌號大字
         self.table_box.pack(side="right", fill="y", padx=(24, 0))
         if p["桌號"]:
-            self.table_lbl.config(text=p["桌號"], font=(FONT, 110, "bold"), fg="#0B1E33")
+            self.table_lbl.config(text=p["桌號"], font=(FONT, 90, "bold"), fg="#0B1E33")
         else:
             self.table_lbl.config(text="未安排\n請洽承辦人", font=(FONT, 26, "bold"),
                                   fg="#B03A2E")
+        ps = ponds(active(p))
+        if ps:
+            self.pond_lbl.config(text="・".join(ps), font=(FONT, 40 if len(ps) == 1 else 28, "bold"),
+                                 fg="#1F5F8B")
+        else:
+            self.pond_lbl.config(text="陪釣（無蝦池）", font=(FONT, 16, "bold"), fg="#7F8C8D")
 
         n = len(p["成員"])
         # 人數多時縮小字體，5–6 位也能完整顯示；勾選模式底下有提示列，門檻較低
@@ -250,21 +263,27 @@ class App(tk.Tk):
             f_title, f_name, f_rel, f_plan, f_rod, gap = 32, 18, 15, 14, 14, 0
         self.name_lbl.config(text=p["員工姓名"], font=(FONT, f_title, "bold"))
         got = len(arrived(p))
-        self.sub_lbl.config(text=f"工號 {p['工號']}　｜　已到 {got} / {n} 位", fg=TEXT,
+        borrow, own = rod_count(active(p))
+        rods = "　".join(x for x in (f"需借釣竿 {borrow} 支" if borrow else "",
+                                     f"自備 {own} 支" if own else "") if x)
+        self.sub_lbl.config(text=f"工號 {show_id(p)}　｜　已到 {got} / {len(active(p))} 位"
+                                 + (f"　｜　{rods}" if rods else ""), fg=TEXT,
                             font=(FONT, 20 if f_title > 32 else 16))
 
         # 參加人明細：[勾選] 編號 / 姓名 / 關係 / 方案 / 釣竿或報到時間
         self.members.pack(fill="x", pady=(4, 0))
-        for c, w in enumerate((1, 1, 5, 3, 4, 3)):
+        for c, w in enumerate((1, 1, 5, 3, 4, 3, 3)):
             self.members.grid_columnconfigure(c, weight=w)
         for i, m in enumerate(p["成員"]):
-            if m["報到時間"]:
+            if m["取消"]:
+                mark, mark_fg = "－", "#AEB6BF"
+            elif m["報到時間"]:
                 mark, mark_fg = "✔", "#ABEBC6"
             elif checks is not None:
                 mark, mark_fg = ("☑", "#FFFFFF") if checks[i] else ("☐", "#AEB6BF")
             else:
                 mark, mark_fg = "✖", "#F5B7B1"
-            dim = checks is not None and not m["報到時間"] and not checks[i]
+            dim = m["取消"] or (checks is not None and not m["報到時間"] and not checks[i])
             fg = "#AEB6BF" if dim else TEXT
             cells = [
                 tk.Label(self.members, text=mark, font=(FONT, f_name + 2, "bold"),
@@ -278,7 +297,14 @@ class App(tk.Tk):
                 tk.Label(self.members, text=m["方案"] or "—", font=(FONT, f_plan, "bold"),
                          fg=PLAN_COLOR.get(m["方案"], ACCENT), bg="#FFFFFF", padx=10),
             ]
-            if m["報到時間"] and checks is not None:
+            # 蝦池（陪釣沒有）
+            pond = f"{m['蝦池']} 號池" if m["蝦池"] and not m["取消"] else "—"
+            cells.append(tk.Label(self.members, text=pond, font=(FONT, f_plan, "bold"),
+                                  fg=fg, bg=color, anchor="w"))
+            if m["取消"]:
+                last = tk.Label(self.members, text="已取消", font=(FONT, f_rod, "bold"),
+                                fg="#AEB6BF", bg=color, anchor="w")
+            elif m["報到時間"] and checks is not None:
                 last = tk.Label(self.members, text=f"{m['報到時間']:%H:%M} 已到",
                                 font=(FONT, f_rod), fg="#ABEBC6", bg=color, anchor="w")
             else:
@@ -291,7 +317,7 @@ class App(tk.Tk):
                 w.grid(row=i, column=c, sticky="w" if c in (4,) else "we",
                        pady=gap, padx=(0, 12) if c == 4 else 0)
                 # 勾選模式下，用滑鼠點該列也能切換
-                if checks is not None and not m["報到時間"]:
+                if checks is not None and not m["報到時間"] and not m["取消"]:
                     w.bind("<Button-1>", lambda e, k=i: self.toggle(k))
                     w.config(cursor="hand2")
         if note:
@@ -347,7 +373,7 @@ class App(tk.Tk):
     def start_pick(self, p, how, text, note=""):
         """開始勾選：第一次報到預設全勾；晚到補報到時，未到的人預設不勾"""
         first = not arrived(p)
-        checks = [first and not m["報到時間"] for m in p["成員"]]
+        checks = [first and not m["報到時間"] and not m["取消"] for m in p["成員"]]
         self.choices = None
         self.pick = {"party": p, "how": how, "checks": checks, "note": note, "text": text}
         self.render_pick()
@@ -365,7 +391,10 @@ class App(tk.Tk):
 
     def toggle(self, i):
         pk = self.pick
-        if not pk or i >= len(pk["checks"]) or pk["party"]["成員"][i]["報到時間"]:
+        if not pk or not 0 <= i < len(pk["checks"]):
+            return
+        m = pk["party"]["成員"][i]
+        if m["報到時間"] or m["取消"]:
             return
         pk["checks"][i] = not pk["checks"][i]
         self.render_pick()
@@ -380,18 +409,15 @@ class App(tk.Tk):
         if not pk:
             return
         p = pk["party"]
-        now = datetime.now().replace(microsecond=0)
         how = {"card": "刷卡", "id": "工號"}.get(pk["how"], pk["how"])
-        new = [m for m, c in zip(p["成員"], pk["checks"]) if c and not m["報到時間"]]
+        new = self.roster.confirm(p, pk["checks"], how)
         if not new:
             self.show_error("未勾選任何人", "已取消，請重新報到")
             self.beep(False)
             self.schedule_reset()
             return
-        for m in new:
-            m["報到時間"], m["報到方式"] = now, how
-        p["last_confirm"] = time.time()
-        absent = [m["姓名"] for m in p["成員"] if not m["報到時間"]]
+        now = new[0]["報到時間"]
+        absent = [m["姓名"] for m in active(p) if not m["報到時間"]]
         self.log.write(輸入內容=pk["text"], 工號=p["工號"], 姓名=p["員工姓名"], 桌號=p["桌號"],
                        到場成員="、".join(m["姓名"] for m in new), 結果="報到成功",
                        附註=how + (f"；{pk['note']}" if pk["note"] else "")
@@ -473,8 +499,14 @@ class App(tk.Tk):
         self.handle_party(p, how, text)
 
     def handle_party(self, p, how, text):
-        if len(arrived(p)) == len(p["成員"]) or \
-                time.time() - p["last_confirm"] < DOUBLE_SWIPE_SECONDS:
+        if p["取消"]:
+            # 全組已取消報名：不開放報到
+            self.log.write(輸入內容=text, 工號=p["工號"], 姓名=p["員工姓名"], 結果="已取消報名")
+            self.show_error("已取消報名", f"{p['員工姓名']}　請洽承辦人")
+            self.beep(False)
+            self.schedule_reset()
+            return
+        if all_arrived(p) or time.time() - p["last_confirm"] < DOUBLE_SWIPE_SECONDS:
             # 全組已到齊，或剛確認完又多刷一次
             t = max(m["報到時間"] for m in arrived(p)).strftime("%H:%M")
             self.log.write(輸入內容=text, 工號=p["工號"], 姓名=p["員工姓名"], 桌號=p["桌號"],
@@ -518,9 +550,9 @@ class App(tk.Tk):
             got, tot = s.get(g, [0, 0])
             v.config(text=f"{got} / {tot}")
             sub.config(text="人（含眷屬）")
-        parties = self.roster.parties
+        parties = [p for p in self.roster.parties if not p["取消"]]
         all_got = sum(len(arrived(p)) for p in parties)
-        all_tot = sum(len(p["成員"]) for p in parties)
+        all_tot = sum(len(active(p)) for p in parties)
         grp_got = sum(1 for p in parties if arrived(p))
         v, sub = self.stat_lbls["合計"]
         v.config(text=f"{all_got} / {all_tot}")
@@ -546,12 +578,12 @@ class App(tk.Tk):
             return (0, int(t)) if t.isdigit() else (1, t)
         rows = []
         for p in sorted(self.roster.parties, key=key):
-            miss = [m for m in p["成員"] if not m["報到時間"]]
+            miss = [m for m in active(p) if not m["報到時間"]]
             if not miss:
                 continue
-            state = "全組未到" if len(miss) == len(p["成員"]) else "部分未到"
+            state = "全組未到" if len(miss) == len(active(p)) else "部分未到"
             names = "、".join(f"{m['姓名']}({m['關係']})" for m in miss)
-            rows.append(f"{p['桌號'] or '未安排':>4} 桌\t{p['工號']}\t{p['員工姓名']}\t{state}\t{names}")
+            rows.append(f"{p['桌號'] or '未安排':>4} 桌\t{show_id(p)}\t{p['員工姓名']}\t{state}\t{names}")
         self.list_window("未報到名單", "桌號\t工號\t\t同仁\t狀態\t\t未到人員", rows)
 
     def show_errors(self):

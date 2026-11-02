@@ -14,7 +14,8 @@ from datetime import datetime
 
 import streamlit as st
 
-from checkin_core import PLAN_COLOR, CheckinLog, Roster, arrived
+from checkin_core import (PLAN_COLOR, CheckinLog, Roster, active, all_arrived, arrived,
+                          ponds, rod_count, show_id)
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_XLSX = os.path.join(APP_DIR, "釣蝦報名表.xlsx")      # 本機模式
@@ -29,7 +30,8 @@ CARD_HINT_SECONDS = 90      # 刷卡失敗後，多久內改用工號報到會�
 INPUT_LABEL = "報到輸入"
 
 STATE_COLOR = {"ok": "#1E8449", "dup": "#B9770E", "err": "#B03A2E",
-               "pick": "#1F5F8B", "choices": "#1F5F8B", "idle": "#12304D"}
+               "pick": "#1F5F8B", "choices": "#1F5F8B", "cancel": "#5D6D7E",
+               "idle": "#12304D"}
 BADGE = {"釣蝦比賽": "red", "陪釣": "orange", "休閒釣蝦": "green"}
 
 st.set_page_config(page_title="釣蝦報到", page_icon="🦐", layout="wide",
@@ -129,7 +131,7 @@ def start_pick(state, p, how, text, note=""):
     v = {"kind": "pick", "emp": p["工號"], "how": how, "text": text,
          "note": note, "nonce": nonce}
     for i, m in enumerate(p["成員"]):
-        if not m["報到時間"]:
+        if not m["報到時間"] and not m["取消"]:
             st.session_state[chk_key(v, i)] = first
     set_view(**v)
     beep("ok")
@@ -138,7 +140,7 @@ def start_pick(state, p, how, text, note=""):
 def toggle(state, i):
     v = view()
     p = state["roster"].by_id[v["emp"]]
-    if 0 <= i < len(p["成員"]) and not p["成員"][i]["報到時間"]:
+    if 0 <= i < len(p["成員"]) and not p["成員"][i]["報到時間"] and not p["成員"][i]["取消"]:
         k = chk_key(v, i)
         st.session_state[k] = not st.session_state.get(k, False)
 
@@ -157,7 +159,7 @@ def confirm_pick(state):
             set_view(kind="err", title="未勾選任何人", msg="已取消，請重新報到")
             beep("err")
             return
-        absent = [m["姓名"] for m in p["成員"] if not m["報到時間"]]
+        absent = [m["姓名"] for m in active(p) if not m["報到時間"]]
         log.write(輸入內容=v["text"], 工號=p["工號"], 姓名=p["員工姓名"], 桌號=p["桌號"],
                   到場成員="、".join(m["姓名"] for m in new), 結果="報到成功",
                   附註=how + (f"；{v['note']}" if v["note"] else "")
@@ -173,8 +175,13 @@ def confirm_pick(state):
 
 def handle_party(state, p, how, text):
     log = state["log"]
-    if len(arrived(p)) == len(p["成員"]) or \
-            time.time() - p["last_confirm"] < DOUBLE_SWIPE_SECONDS:
+    if p["取消"]:
+        # 全組已取消報名：不開放報到，請報到人員引導洽承辦人
+        log.write(輸入內容=text, 工號=p["工號"], 姓名=p["員工姓名"], 結果="已取消報名")
+        set_view(kind="cancel", emp=p["工號"])
+        beep("err")
+        return
+    if all_arrived(p) or time.time() - p["last_confirm"] < DOUBLE_SWIPE_SECONDS:
         t = max(m["報到時間"] for m in arrived(p)).strftime("%H:%M")
         log.write(輸入內容=text, 工號=p["工號"], 姓名=p["員工姓名"], 桌號=p["桌號"],
                   結果="重複報到", 附註=f"最後報到 {t}")
@@ -271,16 +278,25 @@ div[data-testid="stForm"] input {{ font-size:2.2rem !important; font-weight:700;
 .state {{ color:#fff; font-size:2rem; font-weight:800; text-align:center; margin-bottom:.4rem; }}
 .pname {{ color:#fff; font-weight:800; text-align:center; line-height:1.15; }}
 .psub {{ color:#fff; font-size:1.3rem; text-align:center; margin-bottom:.8rem; }}
-.tbl {{ background:#fff; border-radius:8px; text-align:center; padding:18px 8px; min-height:330px; }}
-.tbl .cap {{ color:#0B1E33; font-size:1.8rem; font-weight:800; }}
-.tbl .num {{ color:#0B1E33; font-size:8rem; font-weight:900; line-height:1.2; }}
-.tbl .none {{ color:#B03A2E; font-size:1.8rem; font-weight:800; margin-top:4rem; }}
-.mrow {{ display:flex; align-items:center; gap:18px; color:#fff; }}
+.tbl {{ background:#fff; border-radius:8px; text-align:center; padding:14px 8px; min-height:330px; }}
+.tbl .cap {{ color:#0B1E33; font-size:1.5rem; font-weight:800; }}
+.tbl .num {{ color:#0B1E33; font-size:6.5rem; font-weight:900; line-height:1.1; }}
+.tbl .none {{ color:#B03A2E; font-size:1.5rem; font-weight:800; margin:1.5rem 0; }}
+.tbl .sep {{ border-top:2px dashed #AEB6BF; margin:8px 12px; }}
+.tbl .pnum {{ color:#1F5F8B; font-weight:900; line-height:1.2; }}
+.tbl .pnone {{ color:#7F8C8D; font-size:1.2rem; font-weight:700; margin-top:.6rem; }}
+.mrow {{ display:flex; align-items:center; gap:14px; color:#fff; flex-wrap:wrap; }}
 .mrow .mk {{ width:2.2rem; font-weight:800; }}
 .mrow .nm {{ font-weight:800; min-width:7rem; }}
-.mrow .rel {{ min-width:5rem; }}
+.mrow .nm.gone {{ text-decoration:line-through; color:#AEB6BF; }}
+.mrow .rel {{ min-width:4.5rem; }}
+.mrow .cancel {{ color:#AEB6BF; font-weight:800; }}
 .badge {{ background:#fff; padding:2px 10px; border-radius:4px; font-weight:800; }}
-.rod-borrow {{ color:#FFF3B0; font-weight:800; }}
+.pond {{ background:#0B1E33; color:#fff; border:2px solid #fff; padding:1px 10px; border-radius:4px; font-weight:800; }}
+.pond.none {{ background:transparent; border-color:transparent; color:#AEB6BF; }}
+.rod {{ padding:2px 10px; border-radius:4px; font-weight:800; white-space:nowrap; }}
+.rod.borrow {{ background:#F7DC6F; color:#0B1E33; }}
+.rod.own {{ border:2px solid #fff; color:#fff; }}
 .note {{ color:#FDEBD0; font-size:1.15rem; text-align:center; margin-top:.6rem; }}
 .help {{ background:#F7DC6F; color:#0B1E33; font-weight:800; font-size:1.1rem; text-align:center;
          border-radius:6px; padding:6px 12px; margin-top:.8rem; }}
@@ -338,45 +354,87 @@ def plan_badge(plan, size):
     return f'<span class="badge" style="color:{color};font-size:{size}rem">{html.escape(plan or "—")}</span>'
 
 
+def pond_badge(m, size):
+    """每位參加人的蝦池；陪釣沒有蝦池"""
+    if not m["蝦池"] or m["取消"]:
+        return f'<span class="pond none" style="font-size:{size}rem">—</span>'
+    return f'<span class="pond" style="font-size:{size}rem">{html.escape(m["蝦池"])} 號池</span>'
+
+
+def rod_badge(m, size):
+    """釣竿：需借（黃底）、自備（白框）"""
+    rod = m["釣竿"]
+    if not rod:
+        return ""
+    cls = "rod borrow" if "借" in rod else "rod own"
+    return f'<span class="{cls}" style="font-size:{size}rem">{html.escape(rod)}</span>'
+
+
 def sizes(n, pick):
     """人數多時縮小字體，5–6 位也能完整顯示"""
     if n <= (2 if pick else 3):
-        return 3.4, 1.75
+        return 3.4, 1.6
     if n <= (3 if pick else 4):
-        return 2.8, 1.45
-    return 2.3, 1.2
+        return 2.8, 1.35
+    return 2.3, 1.15
 
 
 def render_party_header(p, title, n_title=None):
     n = len(p["成員"])
     title_size, _ = sizes(n, n_title == "pick")
+    act = active(p)
     got = len(arrived(p))
+    borrow, own = rod_count(act)
+    rods = []
+    if borrow:
+        rods.append(f'<span class="rod borrow">需借釣竿 {borrow} 支</span>')
+    if own:
+        rods.append(f'<span class="rod own">自備 {own} 支</span>')
     st.markdown(f'<div class="state">{title}</div>'
                 f'<div class="pname" style="font-size:{title_size}rem">{html.escape(p["員工姓名"])}</div>'
-                f'<div class="psub">工號 {p["工號"]}　｜　已到 {got} / {n} 位</div>',
+                f'<div class="psub">工號 {html.escape(show_id(p))}　｜　已到 {got} / {len(act)} 位'
+                f'{"　｜　" + " ".join(rods) if rods else ""}</div>',
                 unsafe_allow_html=True)
 
 
 def render_table(p):
+    """右側白框：桌號（大字）+ 蝦池"""
     if p["桌號"]:
-        inner = f'<div class="num">{html.escape(p["桌號"])}</div>'
+        tbl = f'<div class="num">{html.escape(p["桌號"])}</div>'
     else:
-        inner = '<div class="none">未安排<br>請洽承辦人</div>'
-    st.markdown(f'<div class="tbl"><div class="cap">桌號</div>{inner}</div>',
+        tbl = '<div class="none">未安排<br>請洽承辦人</div>'
+    ps = ponds(active(p))
+    if ps:
+        size = 3.6 if len(ps) == 1 else 2.4
+        pond = f'<div class="pnum" style="font-size:{size}rem">{"・".join(map(html.escape, ps))}</div>'
+    else:
+        pond = '<div class="pnone">陪釣（無蝦池）</div>'
+    st.markdown(f'<div class="tbl"><div class="cap">桌號</div>{tbl}'
+                f'<div class="sep"></div><div class="cap">蝦池</div>{pond}</div>',
                 unsafe_allow_html=True)
+
+
+def member_cells(m, fs):
+    """關係 / 方案 / 蝦池 / 釣竿；已取消的人只顯示「已取消」"""
+    if m["取消"]:
+        return f'<span class="rel">{m["關係"]}</span><span class="cancel">已取消</span>'
+    return (f'<span class="rel">{m["關係"]}</span>{plan_badge(m["方案"], fs * .8)}'
+            f'{pond_badge(m, fs * .8)}{rod_badge(m, fs * .75)}')
 
 
 def render_members_static(p):
     _, fs = sizes(len(p["成員"]), False)
     rows = []
     for m in p["成員"]:
-        mk = '<span style="color:#ABEBC6">✔</span>' if m["報到時間"] else \
-            '<span style="color:#F5B7B1">✖</span>'
-        rod = m["釣竿"]
-        rod_html = f'<span class="rod-borrow">{rod}</span>' if "借" in rod else rod
+        if m["取消"]:
+            mk = '<span style="color:#AEB6BF">－</span>'
+        elif m["報到時間"]:
+            mk = '<span style="color:#ABEBC6">✔</span>'
+        else:
+            mk = '<span style="color:#F5B7B1">✖</span>'
+        name_cls = "nm gone" if m["取消"] else "nm"
         rows.append(f'<div class="mrow" style="font-size:{fs}rem"><span class="mk">{mk}</span>'
-                    f'<span class="nm">{html.escape(m["姓名"])}</span><span class="rel">{m["關係"]}</span>'
-                    f'{plan_badge(m["方案"], fs * .85)}<span>{rod_html}</span></div>')
+                    f'<span class="{name_cls}">{html.escape(m["姓名"])}</span>{member_cells(m, fs)}</div>')
     st.markdown("".join(rows), unsafe_allow_html=True)
 
 
@@ -384,18 +442,19 @@ def render_members_pick(state, p, v):
     _, fs = sizes(len(p["成員"]), True)
     for i, m in enumerate(p["成員"]):
         c1, c2 = st.columns([1.3, 3], vertical_alignment="center")
-        rod = m["釣竿"]
-        rod_html = f'<span class="rod-borrow">{rod}</span>' if "借" in rod else rod
-        if m["報到時間"]:
-            c1.markdown(f'<div class="mrow" style="font-size:{fs}rem"><span class="mk" '
-                        f'style="color:#ABEBC6">✔</span><span class="nm">{i + 1}　{html.escape(m["姓名"])}</span></div>',
+        if m["報到時間"] or m["取消"]:
+            mark = '<span class="mk" style="color:#ABEBC6">✔</span>' if m["報到時間"] else \
+                '<span class="mk" style="color:#AEB6BF">－</span>'
+            name_cls = "nm gone" if m["取消"] else "nm"
+            c1.markdown(f'<div class="mrow" style="font-size:{fs}rem">{mark}'
+                        f'<span class="{name_cls}">{i + 1}　{html.escape(m["姓名"])}</span></div>',
                         unsafe_allow_html=True)
-            extra = f'<span style="color:#ABEBC6">{m["報到時間"]:%H:%M} 已到</span>'
         else:
             c1.checkbox(f"{i + 1}　{m['姓名']}", key=chk_key(v, i))
-            extra = rod_html
-        c2.markdown(f'<div class="mrow" style="font-size:{fs * .9}rem"><span class="rel">{m["關係"]}</span>'
-                    f'{plan_badge(m["方案"], fs * .8)}<span>{extra}</span></div>',
+        cells = member_cells(m, fs)
+        if m["報到時間"]:
+            cells += f'<span style="color:#ABEBC6">{m["報到時間"]:%H:%M} 已到</span>'
+        c2.markdown(f'<div class="mrow" style="font-size:{fs * .9}rem">{cells}</div>',
                     unsafe_allow_html=True)
 
 
@@ -409,7 +468,7 @@ def render_card(state):
             st.markdown('<div class="state" style="color:#9FB6CC">歡迎參加！</div>'
                         f'<div class="pname" style="font-size:3.4rem;margin-top:2rem">'
                         f'{"請刷卡報到" if roster.has_card else "請輸入工號報到"}</div>'
-                        '<div class="psub" style="color:#9FB6CC;margin-top:1rem">報到後會顯示您的桌號</div>',
+                        '<div class="psub" style="color:#9FB6CC;margin-top:1rem">報到後會顯示您的桌號與蝦池</div>',
                         unsafe_allow_html=True)
             return
         if kind == "err":
@@ -424,7 +483,8 @@ def render_card(state):
             for i, emp in enumerate(v["emps"]):
                 p = roster.by_id[emp]
                 fam = "、".join(m["姓名"] for m in p["成員"][1:])
-                label = f"{i + 1}　{p['員工姓名']}（{p['工號']}）　{p['桌號'] or '-'} 桌" + \
+                where = "已取消" if p["取消"] else f"{p['桌號'] or '-'} 桌"
+                label = f"{i + 1}　{p['員工姓名']}（{show_id(p)}）　{where}" + \
                         (f"　眷屬：{fam}" if fam else "")
                 st.button(label, key=f"choose_{i}", on_click=choose, args=(state, i))
             st.markdown('<div class="help">輸入數字＋Enter 或點選　｜　按「取消」回到首頁</div>',
@@ -433,13 +493,21 @@ def render_card(state):
             return
 
         p = roster.by_id[v["emp"]]
+        if kind == "cancel":
+            st.markdown('<div class="state">✖　已取消報名</div>'
+                        f'<div class="pname" style="font-size:3rem">{html.escape(p["員工姓名"])}</div>'
+                        f'<div class="psub">工號 {html.escape(show_id(p))}　｜　請洽承辦人</div>',
+                        unsafe_allow_html=True)
+            render_members_static(p)
+            return
         left, right = st.columns([3, 1.1])
         with right:
             render_table(p)
         with left:
             if kind == "pick":
                 n_sel = sum(1 for i, m in enumerate(p["成員"])
-                            if not m["報到時間"] and st.session_state.get(chk_key(v, i)))
+                            if not m["報到時間"] and not m["取消"]
+                            and st.session_state.get(chk_key(v, i)))
                 t = "請確認到場人員" if not arrived(p) else "補報到：請勾選剛到的人"
                 render_party_header(p, f"👥　{t}（已勾 {n_sel} 位）", "pick")
                 render_members_pick(state, p, v)
@@ -470,7 +538,9 @@ def render_recent(state):
         color = PLAN_COLOR.get(p["成員"][0]["方案"] if p["成員"] else "", "#2E9CCA")
         rows.append(f'<div class="r" style="border-color:{color}"><span class="tm">{t:%H:%M}</span>'
                     f'<b>{html.escape(p["員工姓名"])} {k}位</b>'
-                    f'<span class="tb">{p["桌號"] or "-"} 桌</span></div>')
+                    f'<span class="tb">{p["桌號"] or "-"} 桌'
+                    f'{" ・" + "・".join(ponds(active(p))) + " 池" if ponds(active(p)) else ""}'
+                    f'</span></div>')
     st.markdown(f'<div class="recent"><h3>最近報到</h3>{"".join(rows)}</div>',
                 unsafe_allow_html=True)
 
@@ -485,9 +555,9 @@ def render_stats(state):
         c.markdown(f'<div class="stat" style="border-color:{PLAN_COLOR.get(g, "#2E9CCA")}">'
                    f'<div class="t">{g}</div><div class="v">{got} / {tot}</div>'
                    f'<div class="s">人（含眷屬）</div></div>', unsafe_allow_html=True)
-    parties = roster.parties
+    parties = [p for p in roster.parties if not p["取消"]]
     all_got = sum(len(arrived(p)) for p in parties)
-    all_tot = sum(len(p["成員"]) for p in parties)
+    all_tot = sum(len(active(p)) for p in parties)
     grp = sum(1 for p in parties if arrived(p))
     cols[-1].markdown(f'<div class="stat" style="border-color:#2E9CCA"><div class="t">合計</div>'
                       f'<div class="v">{all_got} / {all_tot}</div>'
@@ -543,10 +613,11 @@ def sidebar(state):
             return (0, int(t)) if t.isdigit() else (1, t)
         rows = []
         for p in sorted(roster.parties, key=key):
-            miss = [m for m in p["成員"] if not m["報到時間"]]
+            miss = [m for m in active(p) if not m["報到時間"]]
             if miss:
-                rows.append({"桌號": p["桌號"] or "未安排", "工號": p["工號"], "同仁": p["員工姓名"],
-                             "狀態": "全組未到" if len(miss) == len(p["成員"]) else "部分未到",
+                rows.append({"桌號": p["桌號"] or "未安排", "工號": show_id(p), "同仁": p["員工姓名"],
+                             "蝦池": "・".join(ponds(miss)) or "—",
+                             "狀態": "全組未到" if len(miss) == len(active(p)) else "部分未到",
                              "未到人員": "、".join(f"{m['姓名']}({m['關係']})" for m in miss)})
         st.caption(f"{len(rows)} 組")
         st.dataframe(rows, hide_index=True, width="stretch")
