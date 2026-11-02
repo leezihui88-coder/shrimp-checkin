@@ -8,7 +8,7 @@ import shutil
 import time
 import unicodedata
 from copy import copy
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -27,7 +27,8 @@ COLUMNS = {
     "蝦池": "蝦池",          # 選填：每位參加人的蝦池；填「取消」代表此人取消
     "卡號": "卡號",          # 選填：有這欄才能用卡號比對
 }
-CANCEL = "取消"              # 桌號或蝦池填這個字，代表該參加人已取消
+TW_TZ = timezone(timedelta(hours=8))   # 台灣時間（無日光節約，固定 +8）
+CANCEL = "取消"             # 桌號或蝦池填這個字，代表該參加人已取消
 NO_ID_PREFIX = "無工號-"     # 沒有工號的參加人（例如來賓），用姓名當作組別代號
 REQUIRED = ("工號", "參加人", "桌號", "方案")
 # 報到結果寫回報名表最後面的新增欄位（已存在就沿用同一欄）
@@ -39,6 +40,11 @@ PLAN_COLOR = {"釣蝦比賽": "#E74C3C", "陪釣": "#F39C12", "休閒釣蝦": "#
 # =====================================================================
 # 資料層
 # =====================================================================
+def now():
+    """台灣時間（UTC+8，不含時區資訊）。雲端伺服器是 UTC，不能直接用 datetime.now()"""
+    return datetime.now(TW_TZ).replace(tzinfo=None, microsecond=0)
+
+
 def clean(v):
     """儲存格 / 輸入轉字串；Excel 數字 12.0 轉成 12；全形數字英文轉半形（刷卡機或輸入法打出全形時也對得到）"""
     if v is None:
@@ -179,7 +185,7 @@ class Roster:
                     except ValueError:
                         t = None
                 member["報到時間"] = t if isinstance(t, datetime) else \
-                    datetime.now().replace(microsecond=0)
+                    now()
                 member["報到方式"] = clean(raw(row, "報到方式"))
             # 本人排第一位
             if member["關係"] == "本人":
@@ -266,24 +272,24 @@ class Roster:
 
     def confirm(self, p, checks, how):
         """依勾選結果報到，回傳本次新報到的成員（已到過的人不會重複記錄）"""
-        now = datetime.now().replace(microsecond=0)
+        t = now()
         new = [m for m, c in zip(p["成員"], checks)
                if c and not m["報到時間"] and not m["取消"]]
         for m in new:
-            m["報到時間"], m["報到方式"] = now, how
+            m["報到時間"], m["報到方式"] = t, how
         if new:
             p["last_confirm"] = time.time()
         return new
 
     def update(self, p, checks, how):
         """修改報到：勾選＝到場、未勾＝取消報到，回傳 (新增, 取消) 的成員"""
-        now = datetime.now().replace(microsecond=0)
+        t = now()
         added, removed = [], []
         for m, c in zip(p["成員"], checks):
             if m["取消"]:
                 continue
             if c and not m["報到時間"]:
-                m["報到時間"], m["報到方式"] = now, how
+                m["報到時間"], m["報到方式"] = t, how
                 added.append(m)
             elif not c and m["報到時間"]:
                 m["報到時間"], m["報到方式"] = None, ""
@@ -302,7 +308,7 @@ class Roster:
         """開始報到前先備份原始報名表"""
         os.makedirs(folder, exist_ok=True)
         name = os.path.splitext(os.path.basename(self.path))[0]
-        dst = os.path.join(folder, f"{name}_備份_{datetime.now():%Y%m%d_%H%M%S}.xlsx")
+        dst = os.path.join(folder, f"{name}_備份_{now():%Y%m%d_%H%M%S}.xlsx")
         shutil.copy2(self.path, dst)
         return dst
 
@@ -346,7 +352,7 @@ class CheckinLog:
                 csv.DictWriter(f, LOG_FIELDS).writeheader()
 
     def write(self, **kw):
-        kw.setdefault("時間", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        kw.setdefault("時間", now().strftime("%Y-%m-%d %H:%M:%S"))
         self._ensure()
         with open(self.path, "a", newline="", encoding="utf-8-sig") as f:
             csv.DictWriter(f, LOG_FIELDS).writerow({k: kw.get(k, "") for k in LOG_FIELDS})
@@ -356,7 +362,7 @@ class CheckinLog:
         dst = None
         if os.path.exists(self.path) and len(self.rows()) > 0:
             os.makedirs(folder, exist_ok=True)
-            dst = os.path.join(folder, f"報到紀錄_{datetime.now():%Y%m%d_%H%M%S}.csv")
+            dst = os.path.join(folder, f"報到紀錄_{now():%Y%m%d_%H%M%S}.csv")
             shutil.move(self.path, dst)
         elif os.path.exists(self.path):
             os.remove(self.path)

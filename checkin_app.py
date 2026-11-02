@@ -8,11 +8,10 @@ import os
 import sys
 import time
 import tkinter as tk
-from datetime import datetime
 from tkinter import filedialog, messagebox
 
 from checkin_core import (PLAN_COLOR, RESULT_COLS, CheckinLog, Roster, active, all_arrived,
-                          arrived, ponds, previous_summary, rod_count, show_id)
+                          arrived, now, ponds, previous_summary, rod_count, show_id)
 
 try:
     import winsound
@@ -215,7 +214,7 @@ class App(tk.Tk):
         self.after(500, self.keep_focus)
 
     def tick(self):
-        self.clock.config(text=datetime.now().strftime("%m/%d  %H:%M:%S"))
+        self.clock.config(text=now().strftime("%m/%d  %H:%M:%S"))
         self.after(1000, self.tick)
 
     # ---------- 結果卡 ----------
@@ -705,7 +704,7 @@ class App(tk.Tk):
                                      parent=self)
             return False
         self.save_pending = False
-        self.save_lbl.config(text=f"✔ 已寫回 Excel {datetime.now():%H:%M:%S}", fg="#58D68D")
+        self.save_lbl.config(text=f"✔ 已寫回 Excel {now():%H:%M:%S}", fg="#58D68D")
         if manual:
             messagebox.showinfo("寫入完成", f"已寫回：\n{self.roster.path}", parent=self)
         return True

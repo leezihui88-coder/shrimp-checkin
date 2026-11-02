@@ -9,12 +9,11 @@ import html
 import os
 import threading
 import time
-from datetime import datetime
 
 import streamlit as st
 
 from checkin_core import (PLAN_COLOR, CheckinLog, Roster, active, all_arrived, arrived,
-                          ponds, previous_summary, rod_count, show_id)
+                          now, ponds, previous_summary, rod_count, show_id)
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_XLSX = os.path.join(APP_DIR, "釣蝦報名表.xlsx")      # 本機模式
@@ -104,7 +103,7 @@ def save_excel(state):
     """寫回報名表；失敗（多半是檔案被 Excel 開著）時記下狀態，下次報到會再寫"""
     try:
         state["roster"].save_back()
-        state["save_ok"], state["save_msg"] = True, f"已寫回 Excel {datetime.now():%H:%M:%S}"
+        state["save_ok"], state["save_msg"] = True, f"已寫回 Excel {now():%H:%M:%S}"
     except Exception as e:
         state["save_ok"] = False
         state["save_msg"] = f"Excel 寫入失敗（{type(e).__name__}），請關閉報名表檔案；報到資料已存於 CSV"
@@ -716,7 +715,7 @@ def sidebar(state):
                 st.rerun()
         with open(state["path"], "rb") as f:
             sb.download_button("⬇ 下載報到結果 Excel", f.read(),
-                               file_name=f"報到結果_{datetime.now():%Y%m%d_%H%M}.xlsx",
+                               file_name=f"報到結果_{now():%Y%m%d_%H%M}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                width="stretch")
     if not local:
@@ -775,7 +774,7 @@ def sidebar(state):
 @st.fragment(run_every=2)
 def clock_and_timeout():
     """右上角時鐘；結果畫面停留一段時間後自動回到首頁"""
-    st.markdown(f'<div class="clock">{datetime.now():%m/%d  %H:%M:%S}</div>',
+    st.markdown(f'<div class="clock">{now():%m/%d  %H:%M:%S}</div>',
                 unsafe_allow_html=True)
     v = view()
     limit = CHOICE_TIMEOUT if v["kind"] == "choices" else RESET_SECONDS
