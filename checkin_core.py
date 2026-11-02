@@ -268,6 +268,22 @@ class Roster:
             p["last_confirm"] = time.time()
         return new
 
+    def update(self, p, checks, how):
+        """修改報到：勾選＝到場、未勾＝取消報到，回傳 (新增, 取消) 的成員"""
+        now = datetime.now().replace(microsecond=0)
+        added, removed = [], []
+        for m, c in zip(p["成員"], checks):
+            if m["取消"]:
+                continue
+            if c and not m["報到時間"]:
+                m["報到時間"], m["報到方式"] = now, how
+                added.append(m)
+            elif not c and m["報到時間"]:
+                m["報到時間"], m["報到方式"] = None, ""
+                removed.append(m)
+        p["last_confirm"] = 0
+        return added, removed
+
     def backup(self, folder):
         """開始報到前先備份原始報名表"""
         os.makedirs(folder, exist_ok=True)
@@ -317,13 +333,15 @@ class CheckinLog:
             csv.DictWriter(f, LOG_FIELDS).writerow({k: kw.get(k, "") for k in LOG_FIELDS})
 
     def restore(self, roster):
-        """重開程式時，從紀錄檔還原 Excel 還沒寫到的報到（依到場成員姓名）"""
+        """重開程式時，依時間順序重播紀錄檔，補回 Excel 還沒寫到的報到 / 修改（依到場成員姓名）"""
         n = 0
         with open(self.path, newline="", encoding="utf-8-sig") as f:
             for row in csv.DictReader(f):
-                if row.get("結果") != "報到成功":
+                result = row.get("結果")
+                if result not in ("報到成功", "修改報到"):
                     continue
-                p = roster.by_id.get(norm_id(row.get("工號")))
+                emp = row.get("工號") or ""
+                p = roster.by_id.get(emp) or roster.by_id.get(norm_id(emp))
                 if not p:
                     continue
                 names = set((row.get("到場成員") or "").split("、"))
@@ -333,4 +351,7 @@ class CheckinLog:
                     if m["姓名"] in names and not m["報到時間"]:
                         m["報到時間"], m["報到方式"] = t, how
                         n += 1
+                    elif result == "修改報到" and m["姓名"] not in names and m["報到時間"]:
+                        # 「修改報到」的到場成員是修改後的完整名單，不在名單內的取消報到
+                        m["報到時間"], m["報到方式"] = None, ""
         return n

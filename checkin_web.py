@@ -31,6 +31,7 @@ INPUT_LABEL = "報到輸入"
 
 STATE_COLOR = {"ok": "#1E8449", "dup": "#B9770E", "err": "#B03A2E",
                "pick": "#1F5F8B", "choices": "#1F5F8B", "cancel": "#5D6D7E",
+               "edit": "#6C3483",
                "idle": "#12304D"}
 BADGE = {"釣蝦比賽": "red", "陪釣": "orange", "休閒釣蝦": "green"}
 
@@ -55,9 +56,7 @@ def load_state(path, log_path):
         log = CheckinLog(log_path)
         restored = log.restore(roster)
         reg["state"] = {"roster": roster, "log": log, "path": path, "backup": bak,
-                        "restored": restored, "save_ok": None, "save_msg": "",
-                        # 開啟時從已報到的資料補回「最近報到」
-                        "recent": [(t, p["工號"], n) for t, p, n in roster.recent()]}
+                        "restored": restored, "save_ok": None, "save_msg": ""}
         if restored:
             save_excel(reg["state"])
     return reg["state"]
@@ -141,9 +140,50 @@ def start_pick(state, p, how, text, note=""):
 def toggle(state, i):
     v = view()
     p = state["roster"].by_id[v["emp"]]
-    if 0 <= i < len(p["成員"]) and not p["成員"][i]["報到時間"] and not p["成員"][i]["取消"]:
-        k = chk_key(v, i)
-        st.session_state[k] = not st.session_state.get(k, False)
+    if not 0 <= i < len(p["成員"]):
+        return
+    m = p["成員"][i]
+    # 勾選模式只能勾還沒到的人；修改模式已到的人也能取消
+    if m["取消"] or (m["報到時間"] and v["kind"] != "edit"):
+        return
+    k = chk_key(v, i)
+    st.session_state[k] = not st.session_state.get(k, False)
+
+
+def start_edit(state, emp):
+    """修改報到：列出全組（已取消的除外），目前已到的人預設打勾"""
+    p = state["roster"].by_id[emp]
+    nonce = st.session_state.get("nonce", 0) + 1
+    st.session_state.nonce = nonce
+    v = {"kind": "edit", "emp": emp, "nonce": nonce}
+    for i, m in enumerate(p["成員"]):
+        if not m["取消"]:
+            st.session_state[chk_key(v, i)] = bool(m["報到時間"])
+    set_view(**v)
+
+
+def save_edit(state):
+    v = view()
+    if v["kind"] != "edit":
+        return
+    roster, log = state["roster"], state["log"]
+    p = roster.by_id[v["emp"]]
+    checks = [st.session_state.get(chk_key(v, i), False) for i in range(len(p["成員"]))]
+    with registry()["lock"]:
+        added, removed = roster.update(p, checks, "修改")
+        if not added and not removed:
+            set_view(kind="ok", emp=p["工號"], title="沒有變更", note="")
+            return
+        changes = "；".join(x for x in (
+            "新增：" + "、".join(m["姓名"] for m in added) if added else "",
+            "取消：" + "、".join(m["姓名"] for m in removed) if removed else "") if x)
+        # 到場成員記「修改後的完整名單」，重開程式時才能正確重播
+        log.write(輸入內容="修改報到", 工號=p["工號"], 姓名=p["員工姓名"], 桌號=p["桌號"],
+                  到場成員="、".join(m["姓名"] for m in arrived(p)), 結果="修改報到",
+                  附註="修改；" + changes)
+        save_excel(state)
+    set_view(kind="ok", emp=p["工號"], title="已修改報到", note=changes)
+    beep("ok")
 
 
 def confirm_pick(state):
@@ -165,12 +205,10 @@ def confirm_pick(state):
                   到場成員="、".join(m["姓名"] for m in new), 結果="報到成功",
                   附註=how + (f"；{v['note']}" if v["note"] else "")
                   + (f"；未到：{'、'.join(absent)}" if absent else ""))
-        state["recent"].insert(0, (new[0]["報到時間"], p["工號"], len(new)))
-        del state["recent"][15:]
         save_excel(state)
     note = v["note"] or (f"尚未到：{'、'.join(absent)}（晚到時再刷卡 / 輸入工號補報到）"
                          if absent else "")
-    set_view(kind="ok", emp=p["工號"], n_new=len(new), note=note)
+    set_view(kind="ok", emp=p["工號"], title=f"報到成功　本次 {len(new)} 位", note=note)
     beep("ok")
 
 
@@ -203,10 +241,10 @@ def process(state, text):
     v = view()
     roster = state["roster"]
 
-    # 勾選 / 選擇模式下：空白 Enter 確認、單一數字切換或選擇
-    if v["kind"] == "pick":
+    # 勾選 / 修改 / 選擇模式下：空白 Enter 確認、單一數字切換或選擇
+    if v["kind"] in ("pick", "edit"):
         if not text:
-            confirm_pick(state)
+            (confirm_pick if v["kind"] == "pick" else save_edit)(state)
             return
         if text.isdigit() and len(text) == 1:
             toggle(state, int(text) - 1)
@@ -218,6 +256,9 @@ def process(state, text):
         return
 
     p, how = roster.find(text)
+    if v["kind"] == "edit":
+        # 修改中又輸入別人：修改要明確按「儲存修改」才算，這裡直接放棄修改
+        set_view(kind="idle")
     if v["kind"] == "pick":
         if p is not None and p["工號"] == v["emp"]:   # 同一組再刷一次 = 確認
             confirm_pick(state)
@@ -441,9 +482,11 @@ def render_members_static(p):
 
 def render_members_pick(state, p, v):
     _, fs = sizes(len(p["成員"]), True)
+    edit = v["kind"] == "edit"
     for i, m in enumerate(p["成員"]):
         c1, c2 = st.columns([1.3, 3], vertical_alignment="center")
-        if m["報到時間"] or m["取消"]:
+        # 勾選模式：已到的人鎖定；修改模式：已到的人也可以取消勾選
+        if m["取消"] or (m["報到時間"] and not edit):
             mark = '<span class="mk" style="color:#ABEBC6">✔</span>' if m["報到時間"] else \
                 '<span class="mk" style="color:#AEB6BF">－</span>'
             name_cls = "nm gone" if m["取消"] else "nm"
@@ -518,24 +561,37 @@ def render_card(state):
                 b1.button("✔ 確認報到", type="primary", on_click=confirm_pick, args=(state,),
                           width="stretch")
                 b2.button("取消", on_click=cancel, width="stretch")
+                if arrived(p):   # 補報到時，也可以改已到的人
+                    b3 = st.columns([1.2, 2.8])[0]
+                    b3.button("✏ 修改已報到的人", on_click=start_edit, args=(state, p["工號"]),
+                              width="stretch")
                 confirm = "再刷一次卡 或 Enter 確認" if v["how"] == "card" else "空白 Enter 確認"
                 st.markdown(f'<div class="help">勾選：點名字，或輸入編號＋Enter　｜　{confirm}</div>',
                             unsafe_allow_html=True)
-            elif kind == "ok":
-                render_party_header(p, f"✔　報到成功　本次 {v['n_new']} 位")
+            elif kind == "edit":
+                n_sel = sum(1 for i, m in enumerate(p["成員"])
+                            if not m["取消"] and st.session_state.get(chk_key(v, i)))
+                render_party_header(p, f"✏　修改報到：勾選實際到場的人（已勾 {n_sel} 位）", "pick")
+                render_members_pick(state, p, v)
+                b1, b2, _ = st.columns([1.2, 0.8, 2])
+                b1.button("✔ 儲存修改", type="primary", on_click=save_edit, args=(state,),
+                          width="stretch")
+                b2.button("取消", on_click=cancel, width="stretch")
+                st.markdown('<div class="help">取消勾選＝撤銷報到　｜　勾選＝補上報到　｜　空白 Enter 儲存</div>',
+                            unsafe_allow_html=True)
+            elif kind in ("ok", "dup"):
+                title = f"✔　{v['title']}" if kind == "ok" else f"⚠　已於 {v['t']} 報到過"
+                render_party_header(p, title)
                 render_members_static(p)
                 if v.get("note"):
                     st.markdown(f'<div class="note">{v["note"]}</div>', unsafe_allow_html=True)
-            elif kind == "dup":
-                render_party_header(p, f"⚠　已於 {v['t']} 報到過")
-                render_members_static(p)
+                st.button("✏ 修改報到", key="edit_btn", on_click=start_edit, args=(state, p["工號"]))
 
 
 def render_recent(state):
     roster = state["roster"]
     rows = []
-    for t, emp, k in state["recent"][:12]:
-        p = roster.by_id[emp]
+    for t, p, k in roster.recent(12):   # 直接從名單算，多台電腦、修改報到都會即時反映
         color = PLAN_COLOR.get(p["成員"][0]["方案"] if p["成員"] else "", "#2E9CCA")
         rows.append(f'<div class="r" style="border-color:{color}"><span class="tm">{t:%H:%M}</span>'
                     f'<b>{html.escape(p["員工姓名"])} {k}位</b>'
@@ -642,7 +698,6 @@ def sidebar(state):
                         m["報到時間"], m["報到方式"] = None, ""
                 os.remove(state["log"].path)
                 state["log"] = CheckinLog(state["log"].path)
-                state["recent"].clear()
                 save_excel(state)
             set_view(kind="idle")
             st.rerun()
