@@ -1,0 +1,8 @@
+# 個資：報名表、報到紀錄、備份、截圖一律不上傳 GitHub
+*.xlsx
+*.csv
+data/
+備份/
+畫面預覽/
+.streamlit/secrets.toml
+__pycache__/

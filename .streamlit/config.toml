@@ -1,0 +1,13 @@
+[theme]
+base = "dark"
+primaryColor = "#E74C3C"
+backgroundColor = "#0B1E33"
+secondaryBackgroundColor = "#12304D"
+textColor = "#FFFFFF"
+
+[client]
+# 隱藏右上角 Deploy 等開發者按鈕，避免蓋到時鐘
+toolbarMode = "viewer"
+
+[browser]
+gatherUsageStats = false
