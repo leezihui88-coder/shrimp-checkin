@@ -367,10 +367,10 @@ div[data-testid="InputInstructions"] {{ display:none; }}
 .recent {{ background:#12304D; border-radius:10px; padding:1.4vh 1vw;
     height:calc({c}vh + 16.6vh); overflow-y:auto; box-sizing:border-box; }}
 .recent h3 {{ color:#fff; font-size:2.1vh; margin:0 0 1vh 0; padding:0; }}
-.recent .r {{ display:flex; gap:.6vw; color:#fff; font-size:1.8vh; padding:.3vh 0 .3vh .5vw;
-              border-left:5px solid; margin-bottom:.6vh; }}
-.recent .r .tm {{ color:#9FB6CC; }}
-.recent .r .tb {{ color:#9FB6CC; margin-left:auto; }}
+.recent .r {{ color:#fff; font-size:1.8vh; padding:.2vh 0 .2vh .6vw; line-height:1.4;
+              border-left:5px solid; margin-bottom:.8vh; }}
+.recent .r .tm {{ color:#9FB6CC; margin-right:.6vw; }}
+.recent .r .tb {{ color:#9FB6CC; font-size:1.6vh; }}
 .savebar {{ font-size:1.4vh; }}
 </style>""", unsafe_allow_html=True)
 
@@ -609,11 +609,12 @@ def render_recent(state):
     rows = []
     for t, p, k in roster.recent(300):   # 直接從名單算，多台電腦、修改報到都會即時反映
         color = PLAN_COLOR.get(p["成員"][0]["方案"] if p["成員"] else "", "#2E9CCA")
-        rows.append(f'<div class="r" style="border-color:{color}"><span class="tm">{t:%H:%M}</span>'
-                    f'<b>{html.escape(p["員工姓名"])} {k}位</b>'
-                    f'<span class="tb">{p["桌號"] or "-"} 桌'
-                    f'{" ・" + "・".join(ponds(active(p))) + " 池" if ponds(active(p)) else ""}'
-                    f'</span></div>')
+        # 每筆兩行：時間＋姓名＋人數 / 桌號＋蝦池，長名字也不會擠掉桌號
+        ps = ponds(active(p))
+        where = f'{p["桌號"] or "-"} 桌' + (f'　{"・".join(ps)} 號池' if ps else "")
+        rows.append(f'<div class="r" style="border-color:{color}"><div><span class="tm">{t:%H:%M}</span>'
+                    f'<b>{html.escape(p["員工姓名"])}　{k}位</b></div>'
+                    f'<div class="tb">{where}</div></div>')
     st.markdown(f'<div class="recent"><h3>最近報到</h3>{"".join(rows)}</div>',
                 unsafe_allow_html=True)
 

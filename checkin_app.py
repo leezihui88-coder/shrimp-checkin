@@ -160,8 +160,16 @@ class App(tk.Tk):
         right.pack_propagate(False)
         tk.Label(right, text="最近報到", font=(FONT, 18, "bold"), fg=TEXT,
                  bg=PANEL).pack(anchor="w")
-        self.recent_box = tk.Frame(right, bg=PANEL)
-        self.recent_box.pack(fill="both", expand=True, pady=(10, 0))
+        # 可用滑鼠滾輪捲動的清單：Canvas 裡放一個 Frame
+        self.recent_canvas = tk.Canvas(right, bg=PANEL, highlightthickness=0, bd=0)
+        self.recent_canvas.pack(fill="both", expand=True, pady=(10, 0))
+        self.recent_box = tk.Frame(self.recent_canvas, bg=PANEL)
+        win = self.recent_canvas.create_window((0, 0), window=self.recent_box, anchor="nw")
+        self.recent_box.bind("<Configure>", lambda e: self.recent_canvas.configure(
+            scrollregion=self.recent_canvas.bbox("all")))
+        self.recent_canvas.bind("<Configure>", lambda e: self.recent_canvas.itemconfigure(
+            win, width=e.width))
+        right.bind_all("<MouseWheel>", self.on_wheel)
 
         # 底部統計列：各方案 + 合計
         self.stat_lbls = {}
@@ -601,17 +609,33 @@ class App(tk.Tk):
     def render_recent(self):
         for w in self.recent_box.winfo_children():
             w.destroy()
-        for t, q, k in self.roster.recent(12):   # 直接從名單算，修改報到也會反映
+        # 每筆兩行：時間＋姓名＋人數 / 桌號＋蝦池；全部列出，用滑鼠滾輪捲動
+        for t, q, k in self.roster.recent(300):   # 直接從名單算，修改報到也會反映
             row = tk.Frame(self.recent_box, bg=PANEL)
-            row.pack(fill="x", pady=3)
+            row.pack(fill="x", pady=(0, 6))
             plan = q["成員"][0]["方案"] if q["成員"] else ""
-            tk.Frame(row, bg=PLAN_COLOR.get(plan, ACCENT), width=6).pack(side="left", fill="y")
-            tk.Label(row, text=t.strftime("%H:%M"), font=(FONT, 13),
-                     fg=SUB, bg=PANEL).pack(side="left", padx=(10, 8))
-            tk.Label(row, text=f"{q['員工姓名']} {k}位", font=(FONT, 15, "bold"),
-                     fg=TEXT, bg=PANEL).pack(side="left")
-            tk.Label(row, text=f"{q['桌號'] or '-'} 桌", font=(FONT, 13),
-                     fg=SUB, bg=PANEL).pack(side="right")
+            tk.Frame(row, bg=PLAN_COLOR.get(plan, ACCENT), width=5).pack(side="left", fill="y")
+            text = tk.Frame(row, bg=PANEL)
+            text.pack(side="left", fill="x", expand=True, padx=(8, 0))
+            line1 = tk.Frame(text, bg=PANEL)
+            line1.pack(fill="x")
+            tk.Label(line1, text=t.strftime("%H:%M"), font=(FONT, 12),
+                     fg=SUB, bg=PANEL).pack(side="left", padx=(0, 6))
+            tk.Label(line1, text=f"{q['員工姓名']}  {k}位", font=(FONT, 14, "bold"),
+                     fg=TEXT, bg=PANEL, anchor="w").pack(side="left", fill="x")
+            ps = ponds(active(q))
+            where = f"{q['桌號'] or '-'} 桌" + (f"　{'・'.join(ps)} 號池" if ps else "")
+            tk.Label(text, text=where, font=(FONT, 12), fg=SUB, bg=PANEL,
+                     anchor="w").pack(fill="x")
+        self.recent_canvas.yview_moveto(0)       # 有新報到時回到最上面
+
+    def on_wheel(self, e):
+        """滑鼠在右欄上滾動時捲動最近報到清單"""
+        w = self.winfo_containing(e.x_root, e.y_root)
+        while w is not None and w is not self.recent_canvas:
+            w = w.master
+        if w is self.recent_canvas:
+            self.recent_canvas.yview_scroll(int(-e.delta / 120), "units")
 
     def refresh_stats(self):
         s = self.roster.stats()
