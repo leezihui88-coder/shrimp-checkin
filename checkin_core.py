@@ -6,6 +6,7 @@ import csv
 import os
 import shutil
 import time
+import unicodedata
 from copy import copy
 from datetime import datetime
 
@@ -39,12 +40,12 @@ PLAN_COLOR = {"釣蝦比賽": "#E74C3C", "陪釣": "#F39C12", "休閒釣蝦": "#
 # 資料層
 # =====================================================================
 def clean(v):
-    """儲存格轉字串；Excel 數字 12.0 轉成 12"""
+    """儲存格 / 輸入轉字串；Excel 數字 12.0 轉成 12；全形數字英文轉半形（刷卡機或輸入法打出全形時也對得到）"""
     if v is None:
         return ""
     if isinstance(v, float) and v.is_integer():
         v = int(v)
-    return str(v).strip()
+    return unicodedata.normalize("NFKC", str(v)).strip()
 
 
 def norm_card(v):
@@ -227,7 +228,7 @@ class Roster:
 
     def search_name(self, text):
         """姓名查詢（同仁或眷屬，部分符合即可，英文不分大小寫），回傳符合的組"""
-        key = text.strip().lower()
+        key = clean(text).lower()
         return [p for p in self.parties
                 if key in p["員工姓名"].lower() or any(key in m["姓名"].lower() for m in p["成員"])]
 
