@@ -44,7 +44,8 @@ TEXT = "#FFFFFF"
 SUB = "#9FB6CC"
 ACCENT = "#2E9CCA"
 STATE_COLOR = {"ok": "#1E8449", "dup": "#B9770E", "err": "#B03A2E",
-               "pick": "#1F5F8B", "idle": PANEL}
+               "pick": "#1F5F8B", "edit": "#6C3483", "idle": PANEL}
+EDIT_TIMEOUT = 60          # 修改畫面無人操作幾秒後放棄修改（不會自動儲存）
 FONT = "Microsoft JhengHei UI"
 NUMPAD_KEYCODES = {96 + i: i for i in range(10)}   # Windows 數字鍵盤 0–9
 
@@ -59,9 +60,10 @@ class App(tk.Tk):
         self.reset_job = None
         self.save_pending = False      # 寫回 Excel 失敗、等待重試
         self.last_bad_card = None      # (卡號, 時間)：刷卡失敗後改用工號時標註
-        self.recent = roster.recent()  # 最近報到清單 (時間, 組, 本次人數)，開啟時從已報到資料補回
-        # 勾選中的組：{"party", "how", "checks": [bool], "note", "text"}
+        # 勾選中的組：{"party", "how", "checks": [bool], "note", "text", "mode": "pick" / "edit"}
         self.pick = None
+        self.shown = None              # 結果畫面目前顯示的組（F2 修改報到用）
+        self.help_action = None        # 點黃色提示列要做的事
         self.choices = None            # 姓名搜尋有多組符合時的候選清單
 
         self.title(EVENT_TITLE)
@@ -72,6 +74,7 @@ class App(tk.Tk):
         self.bind("<F11>", lambda e: self.attributes("-fullscreen",
                                                      not self.attributes("-fullscreen")))
         self.bind("<Escape>", self.on_escape)
+        self.bind("<F2>", self.on_f2)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self._build()
@@ -149,6 +152,7 @@ class App(tk.Tk):
         self.note_lbl = tk.Label(self.info, font=(FONT, 16), fg="#FDEBD0", bg=PANEL)
         self.help_lbl = tk.Label(self.card, font=(FONT, 15, "bold"), fg="#0B1E33",
                                  bg="#F7DC6F", padx=16, pady=6)
+        self.help_lbl.bind("<Button-1>", lambda e: self.help_action and self.help_action())
 
         # 右：最近報到
         right = tk.Frame(body, bg=PANEL, width=340, padx=20, pady=16)
@@ -226,7 +230,7 @@ class App(tk.Tk):
         self.sub_lbl.pack(anchor="center", pady=(0, 10))
 
     def show_idle(self):
-        self.pick = self.choices = None
+        self.pick = self.choices = self.shown = None
         self.clear_card()
         self.paint("idle")
         self.state_lbl.config(text="歡迎參加！", fg=SUB)
@@ -234,8 +238,10 @@ class App(tk.Tk):
                              font=(FONT, 54, "bold"))
         self.sub_lbl.config(text="報到後會顯示您的桌號", fg=SUB)
 
-    def show_party(self, state, title, p, checks=None, note="", help_text=""):
-        """顯示一組人員；checks 有值時為勾選模式"""
+    def show_party(self, state, title, p, checks=None, note="", help_text="", edit=False,
+                   help_action=None):
+        """顯示一組人員；checks 有值時為勾選模式，edit=True 時已到的人也能取消勾選"""
+        self.shown = p
         self.clear_card()
         color = self.paint(state)
         self.state_lbl.config(text=title, fg=TEXT)
@@ -243,13 +249,13 @@ class App(tk.Tk):
         # 右側桌號大字
         self.table_box.pack(side="right", fill="y", padx=(24, 0))
         if p["桌號"]:
-            self.table_lbl.config(text=p["桌號"], font=(FONT, 90, "bold"), fg="#0B1E33")
+            self.table_lbl.config(text=p["桌號"], font=(FONT, 72, "bold"), fg="#0B1E33")
         else:
             self.table_lbl.config(text="未安排\n請洽承辦人", font=(FONT, 26, "bold"),
                                   fg="#B03A2E")
         ps = ponds(active(p))
         if ps:
-            self.pond_lbl.config(text="・".join(ps), font=(FONT, 40 if len(ps) == 1 else 28, "bold"),
+            self.pond_lbl.config(text="・".join(ps), font=(FONT, 36 if len(ps) == 1 else 26, "bold"),
                                  fg="#1F5F8B")
         else:
             self.pond_lbl.config(text="陪釣（無蝦池）", font=(FONT, 16, "bold"), fg="#7F8C8D")
@@ -276,15 +282,17 @@ class App(tk.Tk):
         for c, w in enumerate((1, 1, 5, 3, 4, 3, 3)):
             self.members.grid_columnconfigure(c, weight=w)
         for i, m in enumerate(p["成員"]):
+            # 這一列能不能切換勾選：勾選模式只限未到的人，修改模式已到的人也可以
+            can_toggle = checks is not None and not m["取消"] and (edit or not m["報到時間"])
             if m["取消"]:
                 mark, mark_fg = "－", "#AEB6BF"
+            elif can_toggle:
+                mark, mark_fg = ("☑", "#FFFFFF") if checks[i] else ("☐", "#AEB6BF")
             elif m["報到時間"]:
                 mark, mark_fg = "✔", "#ABEBC6"
-            elif checks is not None:
-                mark, mark_fg = ("☑", "#FFFFFF") if checks[i] else ("☐", "#AEB6BF")
             else:
                 mark, mark_fg = "✖", "#F5B7B1"
-            dim = m["取消"] or (checks is not None and not m["報到時間"] and not checks[i])
+            dim = m["取消"] or (can_toggle and not checks[i])
             fg = "#AEB6BF" if dim else TEXT
             cells = [
                 tk.Label(self.members, text=mark, font=(FONT, f_name + 2, "bold"),
@@ -318,22 +326,26 @@ class App(tk.Tk):
                 w.grid(row=i, column=c, sticky="w" if c in (4,) else "we",
                        pady=gap, padx=(0, 12) if c == 4 else 0)
                 # 勾選模式下，用滑鼠點該列也能切換
-                if checks is not None and not m["報到時間"] and not m["取消"]:
+                if can_toggle:
                     w.bind("<Button-1>", lambda e, k=i: self.toggle(k))
                     w.config(cursor="hand2")
-        if note:
+        if note and help_text:
+            # 有黃色提示列時，附註併進提示列，避免被擠掉
+            help_text = f"{note}　｜　{help_text}"
+        elif note:
             self.note_lbl.config(text=note)
             self.note_lbl.pack(pady=(10, 0))
         if help_text:
-            self.show_help(help_text)
+            self.show_help(help_text, help_action)
 
-    def show_help(self, text):
-        """結果卡底部的黃色操作提示，先保留位置，不會被人員清單擠掉"""
-        self.help_lbl.config(text=text)
+    def show_help(self, text, action=None):
+        """結果卡底部的黃色操作提示，先保留位置，不會被人員清單擠掉；action 為點擊時要做的事"""
+        self.help_action = action
+        self.help_lbl.config(text=text, cursor="hand2" if action else "")
         self.help_lbl.pack(side="bottom", pady=(0, 14), before=self.content)
 
     def show_error(self, title, msg):
-        self.pick = self.choices = None
+        self.pick = self.choices = self.shown = None
         self.clear_card()
         self.paint("err")
         self.state_lbl.config(text="✖  " + title, fg=TEXT)
@@ -342,7 +354,7 @@ class App(tk.Tk):
 
     def show_choices(self, parties):
         """姓名搜尋有多組符合：列出讓報到人員選"""
-        self.pick = None
+        self.pick = self.shown = None
         self.choices = parties[:8]
         self.clear_card()
         color = self.paint("pick")
@@ -376,18 +388,38 @@ class App(tk.Tk):
         first = not arrived(p)
         checks = [first and not m["報到時間"] and not m["取消"] for m in p["成員"]]
         self.choices = None
-        self.pick = {"party": p, "how": how, "checks": checks, "note": note, "text": text}
+        self.pick = {"party": p, "how": how, "checks": checks, "note": note, "text": text,
+                     "mode": "pick"}
         self.render_pick()
         self.beep(True)
+
+    def start_edit(self, p=None):
+        """修改報到：列出全組（已取消的除外），目前已到的人預設打勾"""
+        p = p or self.shown
+        if not p or p["取消"]:
+            return
+        checks = [bool(m["報到時間"]) and not m["取消"] for m in p["成員"]]
+        self.choices = None
+        self.pick = {"party": p, "how": "修改", "checks": checks, "note": "", "text": "修改報到",
+                     "mode": "edit"}
+        self.render_pick()
 
     def render_pick(self):
         pk = self.pick
         p = pk["party"]
         n_sel = sum(pk["checks"])
+        if pk["mode"] == "edit":
+            self.show_party("edit", f"✏  修改報到：勾選實際到場的人（已勾 {n_sel} 位）", p,
+                            pk["checks"], "",
+                            "取消勾選＝撤銷報到　｜　數字鍵盤直接按切換（上排：數字＋Enter）"
+                            "　｜　Enter 儲存　｜　Esc 放棄", edit=True)
+            self.schedule_reset(EDIT_TIMEOUT)          # 逾時放棄修改，不自動儲存
+            return
         title = "請確認到場人員" if not arrived(p) else "補報到：請勾選剛到的人"
         confirm = "再刷一次卡 或 Enter 確認" if pk["how"] == "card" else "Enter 確認"
+        extra = "　｜　F2 修改已報到的人" if arrived(p) else ""
         self.show_party("pick", f"👥  {title}（已勾 {n_sel} 位）", p, pk["checks"], pk["note"],
-                        f"數字鍵盤：直接按切換勾選（上排數字：數字＋Enter）　｜　{confirm}　｜　Esc 取消")
+                        f"數字鍵盤：直接按切換勾選（上排數字：數字＋Enter）　｜　{confirm}　｜　Esc 取消{extra}")
         self.schedule_reset(PICK_TIMEOUT, self.confirm_pick)
 
     def toggle(self, i):
@@ -395,7 +427,7 @@ class App(tk.Tk):
         if not pk or not 0 <= i < len(pk["checks"]):
             return
         m = pk["party"]["成員"][i]
-        if m["報到時間"] or m["取消"]:
+        if m["取消"] or (m["報到時間"] and pk["mode"] != "edit"):
             return
         pk["checks"][i] = not pk["checks"][i]
         self.render_pick()
@@ -409,6 +441,9 @@ class App(tk.Tk):
         pk, self.pick = self.pick, None
         if not pk:
             return
+        if pk["mode"] == "edit":
+            self.save_edit(pk)
+            return
         p = pk["party"]
         how = {"card": "刷卡", "id": "工號"}.get(pk["how"], pk["how"])
         new = self.roster.confirm(p, pk["checks"], how)
@@ -417,7 +452,6 @@ class App(tk.Tk):
             self.beep(False)
             self.schedule_reset()
             return
-        now = new[0]["報到時間"]
         absent = [m["姓名"] for m in active(p) if not m["報到時間"]]
         self.log.write(輸入內容=pk["text"], 工號=p["工號"], 姓名=p["員工姓名"], 桌號=p["桌號"],
                        到場成員="、".join(m["姓名"] for m in new), 結果="報到成功",
@@ -425,13 +459,36 @@ class App(tk.Tk):
                        + (f"；未到：{'、'.join(absent)}" if absent else ""))
         note = pk["note"] or (f"尚未到：{'、'.join(absent)}（晚到時再刷卡 / 輸入工號補報到）"
                               if absent else "")
-        self.show_party("ok", f"✔  報到成功　本次 {len(new)} 位", p, note=note)
-        self.recent.insert(0, (now, p, len(new)))
+        self.show_party("ok", f"✔  報到成功　本次 {len(new)} 位", p, note=note,
+                        help_text="勾錯了？按 F2 或點這裡修改報到", help_action=self.start_edit)
         self.render_recent()
         self.refresh_stats()
         self.beep(True)
         self.schedule_reset()
         self.update_idletasks()    # 先把結果畫面畫出來，再寫 Excel
+        self.save_excel()
+
+    def save_edit(self, pk):
+        """儲存修改報到：寫 CSV（到場成員為修改後完整名單）與 Excel"""
+        p = pk["party"]
+        added, removed = self.roster.update(p, pk["checks"], "修改")
+        if not added and not removed:
+            self.show_party("ok", "✔  沒有變更", p)
+            self.schedule_reset()
+            return
+        changes = "；".join(x for x in (
+            "新增：" + "、".join(m["姓名"] for m in added) if added else "",
+            "取消：" + "、".join(m["姓名"] for m in removed) if removed else "") if x)
+        self.log.write(輸入內容="修改報到", 工號=p["工號"], 姓名=p["員工姓名"], 桌號=p["桌號"],
+                       到場成員="、".join(m["姓名"] for m in arrived(p)), 結果="修改報到",
+                       附註="修改；" + changes)
+        self.show_party("ok", "✔  已修改報到", p, note=changes,
+                        help_text="還要改？按 F2 或點這裡", help_action=self.start_edit)
+        self.render_recent()
+        self.refresh_stats()
+        self.beep(True)
+        self.schedule_reset()
+        self.update_idletasks()
         self.save_excel()
 
     # ---------- 輸入處理 ----------
@@ -445,6 +502,15 @@ class App(tk.Tk):
             if self.choices and k >= 0:
                 self.choose(k)
                 return "break"
+
+    def on_f2(self, _=None):
+        """F2：修改目前畫面上這一組的報到"""
+        if self.pick and self.pick["mode"] == "edit":
+            return
+        p = self.pick["party"] if self.pick else self.shown
+        if p and arrived(p):
+            self.pick = None
+            self.start_edit(p)
 
     def on_escape(self, _=None):
         if self.pick or self.choices:
@@ -473,10 +539,13 @@ class App(tk.Tk):
 
         p, how = self.roster.find(text)
         if self.pick:
-            if p is self.pick["party"]:      # 同一組再刷一次 = 確認
+            if p is self.pick["party"]:      # 同一組再刷一次 = 確認 / 儲存修改
                 self.confirm_pick()
                 return
-            self.confirm_pick()              # 下一位已經刷卡：先把上一組確認掉
+            if self.pick["mode"] == "edit":
+                self.pick = None             # 修改中換下一位：修改要明確儲存，這裡放棄
+            else:
+                self.confirm_pick()          # 下一位已經刷卡：先把上一組確認掉
         if p is None and not text.isdigit():
             found = self.roster.search_name(text)
             if len(found) == 1:
@@ -513,7 +582,8 @@ class App(tk.Tk):
             self.log.write(輸入內容=text, 工號=p["工號"], 姓名=p["員工姓名"], 桌號=p["桌號"],
                            結果="重複報到", 附註=f"最後報到 {t}")
             self.pick = self.choices = None
-            self.show_party("dup", f"⚠  已於 {t} 報到過", p)
+            self.show_party("dup", f"⚠  已於 {t} 報到過", p,
+                            help_text="要修改到場的人？按 F2 或點這裡", help_action=self.start_edit)
             self.beep(False)
             self.schedule_reset()
             return
@@ -529,10 +599,9 @@ class App(tk.Tk):
             winsound.MessageBeep(winsound.MB_OK if ok else winsound.MB_ICONHAND)
 
     def render_recent(self):
-        self.recent = self.recent[:12]
         for w in self.recent_box.winfo_children():
             w.destroy()
-        for t, q, k in self.recent:
+        for t, q, k in self.roster.recent(12):   # 直接從名單算，修改報到也會反映
             row = tk.Frame(self.recent_box, bg=PANEL)
             row.pack(fill="x", pady=3)
             plan = q["成員"][0]["方案"] if q["成員"] else ""
@@ -621,7 +690,7 @@ class App(tk.Tk):
     def on_close(self):
         if not messagebox.askyesno("結束報到", "要結束報到程式嗎？", parent=self):
             return
-        if self.pick:
+        if self.pick and self.pick["mode"] == "pick":   # 勾選中的報到先確認；修改中的不自動儲存
             self.confirm_pick()
         if self.save_excel() or messagebox.askyesno(
                 "Excel 尚未寫入",

@@ -28,6 +28,7 @@ CHOICE_TIMEOUT = 30         # 姓名搜尋清單停留秒數
 DOUBLE_SWIPE_SECONDS = 5    # 確認後幾秒內同一組再刷，視為多刷一次
 CARD_HINT_SECONDS = 90      # 刷卡失敗後，多久內改用工號報到會標註「卡號不符」
 INPUT_LABEL = "報到輸入"
+CARD_VH = 64               # 結果卡高度（螢幕高度的百分比），整頁不需捲動
 
 STATE_COLOR = {"ok": "#1E8449", "dup": "#B9770E", "err": "#B03A2E",
                "pick": "#1F5F8B", "choices": "#1F5F8B", "cancel": "#5D6D7E",
@@ -305,57 +306,72 @@ def beep(kind):
 
 
 def inject_css(card_color):
+    """整頁固定在一個畫面內：尺寸都用螢幕高度（vh）計算，內容太多時只在結果卡內捲動"""
+    c = CARD_VH
     st.markdown(f"""
 <style>
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {{ overflow:hidden !important; }}
 .stApp {{ background:#0B1E33; }}
 header[data-testid="stHeader"] {{ background:transparent; }}
-.block-container {{ padding-top:1.2rem; padding-bottom:1rem; max-width:100%; }}
-h1.title {{ color:#fff; font-size:2.4rem; margin:0; }}
-.clock {{ color:#9FB6CC; font-size:1.8rem; text-align:right; }}
-.hint {{ color:#9FB6CC; font-size:1.2rem; margin-bottom:.2rem; }}
-div[data-testid="stForm"] {{ background:#12304D; border:none; border-radius:10px; padding:16px 24px; }}
-div[data-testid="stForm"] input {{ font-size:2.2rem !important; font-weight:700; text-align:center;
-    height:4.2rem; background:#fff; color:#0B1E33; }}
-.st-key-card {{ background:{card_color}; border-radius:12px; padding:20px 28px; min-height:430px; }}
-.state {{ color:#fff; font-size:2rem; font-weight:800; text-align:center; margin-bottom:.4rem; }}
+.block-container {{ padding:.8vh 1.6vw 0 3vw !important; max-width:100% !important; }}
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] {{ gap:1vh; }}
+[data-testid="stMarkdownContainer"] {{ margin-bottom:0 !important; }}
+.element-container:has(iframe), [data-testid="stElementContainer"]:has(iframe) {{
+    position:absolute; width:0; height:0; overflow:hidden; }}
+h1.title {{ color:#fff; font-size:4vh; margin:0; padding:0; line-height:1.25; }}
+.clock {{ color:#9FB6CC; font-size:3vh; text-align:right; line-height:1.6; }}
+.hint {{ color:#9FB6CC; font-size:1.9vh; margin-bottom:.3vh; }}
+div[data-testid="stForm"] {{ background:#12304D; border:none; border-radius:10px; padding:1.2vh 1.5vw; }}
+div[data-testid="stForm"] input {{ font-size:3.6vh !important; font-weight:700; text-align:center;
+    height:6.2vh; background:#fff; color:#0B1E33; }}
+div[data-testid="stFormSubmitButton"] {{ display:none; }}
+div[data-testid="InputInstructions"] {{ display:none; }}
+.st-key-card {{ background:{card_color}; border-radius:12px; padding:1.4vh 1.4vw;
+    height:{c}vh; max-height:{c}vh; flex:0 0 auto; overflow:hidden; }}
+.st-key-card [data-testid="stVerticalBlock"] {{ gap:.6vh; }}
+.state {{ color:#fff; font-size:3.2vh; font-weight:800; text-align:center; margin-bottom:.3vh; }}
 .pname {{ color:#fff; font-weight:800; text-align:center; line-height:1.15; }}
-.psub {{ color:#fff; font-size:1.3rem; text-align:center; margin-bottom:.8rem; }}
-.tbl {{ background:#fff; border-radius:8px; text-align:center; padding:14px 8px; min-height:330px; }}
-.tbl .cap {{ color:#0B1E33; font-size:1.5rem; font-weight:800; }}
-.tbl .num {{ color:#0B1E33; font-size:6.5rem; font-weight:900; line-height:1.1; }}
-.tbl .none {{ color:#B03A2E; font-size:1.5rem; font-weight:800; margin:1.5rem 0; }}
-.tbl .sep {{ border-top:2px dashed #AEB6BF; margin:8px 12px; }}
-.tbl .pnum {{ color:#1F5F8B; font-weight:900; line-height:1.2; }}
-.tbl .pnone {{ color:#7F8C8D; font-size:1.2rem; font-weight:700; margin-top:.6rem; }}
-.mrow {{ display:flex; align-items:center; gap:14px; color:#fff; flex-wrap:wrap; }}
-.mrow .mk {{ width:2.2rem; font-weight:800; }}
-.mrow .nm {{ font-weight:800; min-width:7rem; }}
+.psub {{ color:#fff; font-size:2.1vh; text-align:center; margin-bottom:1vh; }}
+.tbl {{ background:#fff; border-radius:8px; text-align:center; padding:1.2vh .5vw;
+    height:calc({c}vh - 4vh); box-sizing:border-box; display:flex; flex-direction:column;
+    justify-content:space-evenly; }}
+.tbl .cap {{ color:#0B1E33; font-size:2.6vh; font-weight:800; }}
+.tbl .num {{ color:#0B1E33; font-size:12vh; font-weight:900; line-height:1; }}
+.tbl .none {{ color:#B03A2E; font-size:2.4vh; font-weight:800; }}
+.tbl .sep {{ border-top:2px dashed #AEB6BF; margin:0 .6vw; }}
+.tbl .pnum {{ color:#1F5F8B; font-weight:900; line-height:1.1; }}
+.tbl .pnone {{ color:#7F8C8D; font-size:1.9vh; font-weight:700; }}
+.mrow {{ display:flex; align-items:center; gap:1vw; color:#fff; flex-wrap:wrap; line-height:1.5; }}
+.mrow .mk {{ width:3vh; font-weight:800; }}
+.mrow .nm {{ font-weight:800; min-width:6em; }}
 .mrow .nm.gone {{ text-decoration:line-through; color:#AEB6BF; }}
-.mrow .rel {{ min-width:4.5rem; }}
+.mrow .rel {{ min-width:4em; }}
 .mrow .cancel {{ color:#AEB6BF; font-weight:800; }}
-.badge {{ background:#fff; padding:2px 10px; border-radius:4px; font-weight:800; }}
-.pond {{ background:#0B1E33; color:#fff; border:2px solid #fff; padding:1px 10px; border-radius:4px; font-weight:800; }}
+.badge {{ background:#fff; padding:0 .5vw; border-radius:4px; font-weight:800; }}
+.pond {{ background:#0B1E33; color:#fff; border:2px solid #fff; padding:0 .5vw; border-radius:4px; font-weight:800; }}
 .pond.none {{ background:transparent; border-color:transparent; color:#AEB6BF; }}
-.rod {{ padding:2px 10px; border-radius:4px; font-weight:800; white-space:nowrap; }}
+.rod {{ padding:0 .5vw; border-radius:4px; font-weight:800; white-space:nowrap; }}
 .rod.borrow {{ background:#F7DC6F; color:#0B1E33; }}
 .rod.own {{ border:2px solid #fff; color:#fff; }}
-.note {{ color:#FDEBD0; font-size:1.15rem; text-align:center; margin-top:.6rem; }}
-.help {{ background:#F7DC6F; color:#0B1E33; font-weight:800; font-size:1.1rem; text-align:center;
-         border-radius:6px; padding:6px 12px; margin-top:.8rem; }}
-.st-key-card [data-testid="stCheckbox"] {{ zoom:1.35; }}
-.st-key-card [data-testid="stCheckbox"] p {{ color:#fff; font-weight:800; font-size:1.25rem; }}
-.st-key-card .stButton button {{ font-size:1.2rem; font-weight:800; }}
-.stat {{ background:#12304D; border-radius:10px; padding:10px 16px; border-left:8px solid; }}
-.stat .t {{ color:#9FB6CC; font-size:1rem; }}
-.stat .v {{ color:#fff; font-size:2rem; font-weight:800; line-height:1.2; }}
-.stat .s {{ color:#9FB6CC; font-size:.85rem; }}
-.recent {{ background:#12304D; border-radius:10px; padding:14px 16px; min-height:560px; }}
-.recent h3 {{ color:#fff; font-size:1.2rem; margin:0 0 .6rem 0; }}
-.recent .r {{ display:flex; gap:10px; color:#fff; font-size:1.05rem; padding:3px 0 3px 8px;
-              border-left:5px solid; margin-bottom:5px; }}
+.note {{ color:#FDEBD0; font-size:1.9vh; text-align:center; margin-top:.6vh; }}
+.help {{ background:#F7DC6F; color:#0B1E33; font-weight:800; font-size:1.8vh; text-align:center;
+         border-radius:6px; padding:.6vh 1vw; }}
+.st-key-card [data-testid="stCheckbox"] {{ zoom:1.3; }}
+.st-key-card [data-testid="stCheckbox"] p {{ color:#fff; font-weight:800; font-size:2.1vh; }}
+.st-key-card .stButton button {{ font-size:1.9vh; font-weight:800; min-height:0; padding:.4vh 1vw; line-height:1.4; }}
+.st-key-card .stButton button p {{ font-size:1.9vh; }}
+.stat {{ background:#12304D; border-radius:10px; padding:.7vh 1vw; border-left:8px solid; }}
+.stat .t {{ color:#9FB6CC; font-size:1.6vh; }}
+.stat .v {{ color:#fff; font-size:3.6vh; font-weight:800; line-height:1.15; }}
+.stat .s {{ color:#9FB6CC; font-size:1.4vh; }}
+.recent {{ background:#12304D; border-radius:10px; padding:1.4vh 1vw;
+    height:calc({c}vh + 16.6vh); overflow-y:auto; box-sizing:border-box; }}
+.recent h3 {{ color:#fff; font-size:2.1vh; margin:0 0 1vh 0; padding:0; }}
+.recent .r {{ display:flex; gap:.6vw; color:#fff; font-size:1.8vh; padding:.3vh 0 .3vh .5vw;
+              border-left:5px solid; margin-bottom:.6vh; }}
 .recent .r .tm {{ color:#9FB6CC; }}
 .recent .r .tb {{ color:#9FB6CC; margin-left:auto; }}
-.savebar {{ font-size:.9rem; margin-top:.4rem; }}
+.savebar {{ font-size:1.4vh; }}
 </style>""", unsafe_allow_html=True)
 
 
@@ -393,14 +409,14 @@ if (!window.__scanTimer) window.__scanTimer = setInterval(focusScan, 600);
 
 def plan_badge(plan, size):
     color = PLAN_COLOR.get(plan, "#2E9CCA")
-    return f'<span class="badge" style="color:{color};font-size:{size}rem">{html.escape(plan or "—")}</span>'
+    return f'<span class="badge" style="color:{color};font-size:{size}vh">{html.escape(plan or "—")}</span>'
 
 
 def pond_badge(m, size):
     """每位參加人的蝦池；陪釣沒有蝦池"""
     if not m["蝦池"] or m["取消"]:
-        return f'<span class="pond none" style="font-size:{size}rem">—</span>'
-    return f'<span class="pond" style="font-size:{size}rem">{html.escape(m["蝦池"])} 號池</span>'
+        return f'<span class="pond none" style="font-size:{size}vh">—</span>'
+    return f'<span class="pond" style="font-size:{size}vh">{html.escape(m["蝦池"])} 號池</span>'
 
 
 def rod_badge(m, size):
@@ -409,16 +425,16 @@ def rod_badge(m, size):
     if not rod:
         return ""
     cls = "rod borrow" if "借" in rod else "rod own"
-    return f'<span class="{cls}" style="font-size:{size}rem">{html.escape(rod)}</span>'
+    return f'<span class="{cls}" style="font-size:{size}vh">{html.escape(rod)}</span>'
 
 
 def sizes(n, pick):
     """人數多時縮小字體，5–6 位也能完整顯示"""
     if n <= (2 if pick else 3):
-        return 3.4, 1.6
+        return 5.6, 3.0
     if n <= (3 if pick else 4):
-        return 2.8, 1.35
-    return 2.3, 1.15
+        return 4.6, 2.6
+    return 3.8, 2.2
 
 
 def render_party_header(p, title, n_title=None):
@@ -433,7 +449,7 @@ def render_party_header(p, title, n_title=None):
     if own:
         rods.append(f'<span class="rod own">自備 {own} 支</span>')
     st.markdown(f'<div class="state">{title}</div>'
-                f'<div class="pname" style="font-size:{title_size}rem">{html.escape(p["員工姓名"])}</div>'
+                f'<div class="pname" style="font-size:{title_size}vh">{html.escape(p["員工姓名"])}</div>'
                 f'<div class="psub">工號 {html.escape(show_id(p))}　｜　已到 {got} / {len(act)} 位'
                 f'{"　｜　" + " ".join(rods) if rods else ""}</div>',
                 unsafe_allow_html=True)
@@ -447,8 +463,8 @@ def render_table(p):
         tbl = '<div class="none">未安排<br>請洽承辦人</div>'
     ps = ponds(active(p))
     if ps:
-        size = 3.6 if len(ps) == 1 else 2.4
-        pond = f'<div class="pnum" style="font-size:{size}rem">{"・".join(map(html.escape, ps))}</div>'
+        size = 7 if len(ps) == 1 else 5
+        pond = f'<div class="pnum" style="font-size:{size}vh">{"・".join(map(html.escape, ps))}</div>'
     else:
         pond = '<div class="pnone">陪釣（無蝦池）</div>'
     st.markdown(f'<div class="tbl"><div class="cap">桌號</div>{tbl}'
@@ -475,7 +491,7 @@ def render_members_static(p):
         else:
             mk = '<span style="color:#F5B7B1">✖</span>'
         name_cls = "nm gone" if m["取消"] else "nm"
-        rows.append(f'<div class="mrow" style="font-size:{fs}rem"><span class="mk">{mk}</span>'
+        rows.append(f'<div class="mrow" style="font-size:{fs}vh"><span class="mk">{mk}</span>'
                     f'<span class="{name_cls}">{html.escape(m["姓名"])}</span>{member_cells(m, fs)}</div>')
     st.markdown("".join(rows), unsafe_allow_html=True)
 
@@ -490,7 +506,7 @@ def render_members_pick(state, p, v):
             mark = '<span class="mk" style="color:#ABEBC6">✔</span>' if m["報到時間"] else \
                 '<span class="mk" style="color:#AEB6BF">－</span>'
             name_cls = "nm gone" if m["取消"] else "nm"
-            c1.markdown(f'<div class="mrow" style="font-size:{fs}rem">{mark}'
+            c1.markdown(f'<div class="mrow" style="font-size:{fs}vh">{mark}'
                         f'<span class="{name_cls}">{i + 1}　{html.escape(m["姓名"])}</span></div>',
                         unsafe_allow_html=True)
         else:
@@ -498,7 +514,7 @@ def render_members_pick(state, p, v):
         cells = member_cells(m, fs)
         if m["報到時間"]:
             cells += f'<span style="color:#ABEBC6">{m["報到時間"]:%H:%M} 已到</span>'
-        c2.markdown(f'<div class="mrow" style="font-size:{fs * .9}rem">{cells}</div>',
+        c2.markdown(f'<div class="mrow" style="font-size:{fs * .9}vh">{cells}</div>',
                     unsafe_allow_html=True)
 
 
@@ -510,14 +526,14 @@ def render_card(state):
     with st.container(key="card"):
         if kind == "idle":
             st.markdown('<div class="state" style="color:#9FB6CC">歡迎參加！</div>'
-                        f'<div class="pname" style="font-size:3.4rem;margin-top:2rem">'
+                        f'<div class="pname" style="font-size:6vh;margin-top:4vh">'
                         f'{"請刷卡報到" if roster.has_card else "請輸入工號報到"}</div>'
-                        '<div class="psub" style="color:#9FB6CC;margin-top:1rem">報到後會顯示您的桌號與蝦池</div>',
+                        '<div class="psub" style="color:#9FB6CC;margin-top:2vh">報到後會顯示您的桌號與蝦池</div>',
                         unsafe_allow_html=True)
             return
         if kind == "err":
             st.markdown(f'<div class="state">✖　{v["title"]}</div>'
-                        f'<div class="pname" style="font-size:3.4rem;margin-top:2rem">{v["msg"]}</div>',
+                        f'<div class="pname" style="font-size:6vh;margin-top:4vh">{v["msg"]}</div>',
                         unsafe_allow_html=True)
             return
         if kind == "choices":
@@ -539,7 +555,7 @@ def render_card(state):
         p = roster.by_id[v["emp"]]
         if kind == "cancel":
             st.markdown('<div class="state">✖　已取消報名</div>'
-                        f'<div class="pname" style="font-size:3rem">{html.escape(p["員工姓名"])}</div>'
+                        f'<div class="pname" style="font-size:5vh">{html.escape(p["員工姓名"])}</div>'
                         f'<div class="psub">工號 {html.escape(show_id(p))}　｜　請洽承辦人</div>',
                         unsafe_allow_html=True)
             render_members_static(p)
@@ -563,7 +579,7 @@ def render_card(state):
                 b2.button("取消", on_click=cancel, width="stretch")
                 if arrived(p):   # 補報到時，也可以改已到的人
                     b3 = st.columns([1.2, 2.8])[0]
-                    b3.button("✏ 修改已報到的人", on_click=start_edit, args=(state, p["工號"]),
+                    b3.button("📝 修改已報到的人", on_click=start_edit, args=(state, p["工號"]),
                               width="stretch")
                 confirm = "再刷一次卡 或 Enter 確認" if v["how"] == "card" else "空白 Enter 確認"
                 st.markdown(f'<div class="help">勾選：點名字，或輸入編號＋Enter　｜　{confirm}</div>',
@@ -571,7 +587,7 @@ def render_card(state):
             elif kind == "edit":
                 n_sel = sum(1 for i, m in enumerate(p["成員"])
                             if not m["取消"] and st.session_state.get(chk_key(v, i)))
-                render_party_header(p, f"✏　修改報到：勾選實際到場的人（已勾 {n_sel} 位）", "pick")
+                render_party_header(p, f"📝　修改報到：勾選實際到場的人（已勾 {n_sel} 位）", "pick")
                 render_members_pick(state, p, v)
                 b1, b2, _ = st.columns([1.2, 0.8, 2])
                 b1.button("✔ 儲存修改", type="primary", on_click=save_edit, args=(state,),
@@ -585,13 +601,13 @@ def render_card(state):
                 render_members_static(p)
                 if v.get("note"):
                     st.markdown(f'<div class="note">{v["note"]}</div>', unsafe_allow_html=True)
-                st.button("✏ 修改報到", key="edit_btn", on_click=start_edit, args=(state, p["工號"]))
+                st.button("📝 修改報到", key="edit_btn", on_click=start_edit, args=(state, p["工號"]))
 
 
 def render_recent(state):
     roster = state["roster"]
     rows = []
-    for t, p, k in roster.recent(12):   # 直接從名單算，多台電腦、修改報到都會即時反映
+    for t, p, k in roster.recent(300):   # 直接從名單算，多台電腦、修改報到都會即時反映
         color = PLAN_COLOR.get(p["成員"][0]["方案"] if p["成員"] else "", "#2E9CCA")
         rows.append(f'<div class="r" style="border-color:{color}"><span class="tm">{t:%H:%M}</span>'
                     f'<b>{html.escape(p["員工姓名"])} {k}位</b>'
