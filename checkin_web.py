@@ -28,7 +28,8 @@ CHOICE_TIMEOUT = 30         # 姓名搜尋清單停留秒數
 DOUBLE_SWIPE_SECONDS = 5    # 確認後幾秒內同一組再刷，視為多刷一次
 CARD_HINT_SECONDS = 90      # 刷卡失敗後，多久內改用工號報到會標註「卡號不符」
 INPUT_LABEL = "報到輸入"
-CARD_VH = 64               # 結果卡高度（螢幕高度的百分比），整頁不需捲動
+MAX_CHOICES = 6            # 姓名搜尋最多列幾組（字放大後一頁放得下）
+CARD_VH = 60               # 結果卡高度（螢幕高度的百分比），整頁不需捲動
 
 STATE_COLOR = {"ok": "#1E8449", "dup": "#B9770E", "err": "#B03A2E",
                "pick": "#1F5F8B", "choices": "#1F5F8B", "cancel": "#5D6D7E",
@@ -270,7 +271,7 @@ def process(state, text):
         if len(found) == 1:
             p, how = found[0], "姓名"
         elif len(found) > 1:
-            set_view(kind="choices", emps=[x["工號"] for x in found[:8]], total=len(found))
+            set_view(kind="choices", emps=[x["工號"] for x in found[:MAX_CHOICES]], total=len(found))
             return
     if p is None:
         is_card = roster.has_card and text.isdigit() and len(text) > 8
@@ -318,29 +319,29 @@ header[data-testid="stHeader"] {{ background:transparent; }}
 [data-testid="stMarkdownContainer"] {{ margin-bottom:0 !important; }}
 .element-container:has(iframe), [data-testid="stElementContainer"]:has(iframe) {{
     position:absolute; width:0; height:0; overflow:hidden; }}
-h1.title {{ color:#fff; font-size:4vh; margin:0; padding:0; line-height:1.25; }}
-.clock {{ color:#9FB6CC; font-size:3vh; text-align:right; line-height:1.6; }}
-.hint {{ color:#9FB6CC; font-size:1.9vh; margin-bottom:.3vh; }}
+h1.title {{ color:#fff; font-size:4.6vh; margin:0; padding:0; line-height:1.25; }}
+.clock {{ color:#9FB6CC; font-size:3.4vh; text-align:right; line-height:1.6; }}
+.hint {{ color:#9FB6CC; font-size:2.4vh; margin-bottom:.3vh; }}
 div[data-testid="stForm"] {{ background:#12304D; border:none; border-radius:10px; padding:1.2vh 1.5vw; }}
-div[data-testid="stForm"] input {{ font-size:3.6vh !important; font-weight:700; text-align:center;
-    height:6.2vh; background:#fff; color:#0B1E33; }}
+div[data-testid="stForm"] input {{ font-size:4.2vh !important; font-weight:700; text-align:center;
+    height:6.8vh; background:#fff; color:#0B1E33; }}
 div[data-testid="stFormSubmitButton"] {{ display:none; }}
 div[data-testid="InputInstructions"] {{ display:none; }}
 .st-key-card {{ background:{card_color}; border-radius:12px; padding:1.4vh 1.4vw;
     height:{c}vh; max-height:{c}vh; flex:0 0 auto; overflow:hidden; }}
 .st-key-card [data-testid="stVerticalBlock"] {{ gap:.6vh; }}
-.state {{ color:#fff; font-size:3.2vh; font-weight:800; text-align:center; margin-bottom:.3vh; }}
+.state {{ color:#fff; font-size:3.9vh; font-weight:800; text-align:center; margin-bottom:.3vh; }}
 .pname {{ color:#fff; font-weight:800; text-align:center; line-height:1.15; }}
-.psub {{ color:#fff; font-size:2.1vh; text-align:center; margin-bottom:1vh; }}
+.psub {{ color:#fff; font-size:2.6vh; text-align:center; margin-bottom:1vh; }}
 .tbl {{ background:#fff; border-radius:8px; text-align:center; padding:1.2vh .5vw;
     height:calc({c}vh - 4vh); box-sizing:border-box; display:flex; flex-direction:column;
     justify-content:space-evenly; }}
-.tbl .cap {{ color:#0B1E33; font-size:2.6vh; font-weight:800; }}
-.tbl .num {{ color:#0B1E33; font-size:12vh; font-weight:900; line-height:1; }}
-.tbl .none {{ color:#B03A2E; font-size:2.4vh; font-weight:800; }}
+.tbl .cap {{ color:#0B1E33; font-size:3.2vh; font-weight:800; }}
+.tbl .num {{ color:#0B1E33; font-size:14vh; font-weight:900; line-height:1; }}
+.tbl .none {{ color:#B03A2E; font-size:2.9vh; font-weight:800; }}
 .tbl .sep {{ border-top:2px dashed #AEB6BF; margin:0 .6vw; }}
 .tbl .pnum {{ color:#1F5F8B; font-weight:900; line-height:1.1; }}
-.tbl .pnone {{ color:#7F8C8D; font-size:1.9vh; font-weight:700; }}
+.tbl .pnone {{ color:#7F8C8D; font-size:2.4vh; font-weight:700; }}
 .mrow {{ display:flex; align-items:center; gap:1vw; color:#fff; flex-wrap:wrap; line-height:1.5; }}
 .mrow .mk {{ width:3vh; font-weight:800; }}
 .mrow .nm {{ font-weight:800; min-width:6em; }}
@@ -353,25 +354,25 @@ div[data-testid="InputInstructions"] {{ display:none; }}
 .rod {{ padding:0 .5vw; border-radius:4px; font-weight:800; white-space:nowrap; }}
 .rod.borrow {{ background:#F7DC6F; color:#0B1E33; }}
 .rod.own {{ border:2px solid #fff; color:#fff; }}
-.note {{ color:#FDEBD0; font-size:1.9vh; text-align:center; margin-top:.6vh; }}
-.help {{ background:#F7DC6F; color:#0B1E33; font-weight:800; font-size:1.8vh; text-align:center;
+.note {{ color:#FDEBD0; font-size:2.4vh; text-align:center; margin-top:.6vh; }}
+.help {{ background:#F7DC6F; color:#0B1E33; font-weight:800; font-size:2.3vh; text-align:center;
          border-radius:6px; padding:.6vh 1vw; }}
 .st-key-card [data-testid="stCheckbox"] {{ zoom:1.3; }}
-.st-key-card [data-testid="stCheckbox"] p {{ color:#fff; font-weight:800; font-size:2.1vh; }}
-.st-key-card .stButton button {{ font-size:1.9vh; font-weight:800; min-height:0; padding:.4vh 1vw; line-height:1.4; }}
-.st-key-card .stButton button p {{ font-size:1.9vh; }}
+.st-key-card [data-testid="stCheckbox"] p {{ color:#fff; font-weight:800; font-size:2.6vh; }}
+.st-key-card .stButton button {{ font-size:2.4vh; font-weight:800; min-height:0; padding:.4vh 1vw; line-height:1.4; }}
+.st-key-card .stButton button p {{ font-size:2.4vh; }}
 .stat {{ background:#12304D; border-radius:10px; padding:.7vh 1vw; border-left:8px solid; }}
-.stat .t {{ color:#9FB6CC; font-size:1.6vh; }}
-.stat .v {{ color:#fff; font-size:3.6vh; font-weight:800; line-height:1.15; }}
-.stat .s {{ color:#9FB6CC; font-size:1.4vh; }}
+.stat .t {{ color:#9FB6CC; font-size:2.1vh; }}
+.stat .v {{ color:#fff; font-size:4.4vh; font-weight:800; line-height:1.15; }}
+.stat .s {{ color:#9FB6CC; font-size:1.8vh; }}
 .recent {{ background:#12304D; border-radius:10px; padding:1.4vh 1vw;
     height:calc({c}vh + 16.6vh); overflow-y:auto; box-sizing:border-box; }}
-.recent h3 {{ color:#fff; font-size:2.1vh; margin:0 0 1vh 0; padding:0; }}
-.recent .r {{ color:#fff; font-size:1.8vh; padding:.2vh 0 .2vh .6vw; line-height:1.4;
+.recent h3 {{ color:#fff; font-size:2.7vh; margin:0 0 1vh 0; padding:0; }}
+.recent .r {{ color:#fff; font-size:2.4vh; padding:.2vh 0 .2vh .6vw; line-height:1.4;
               border-left:5px solid; margin-bottom:.8vh; }}
 .recent .r .tm {{ color:#9FB6CC; margin-right:.6vw; }}
-.recent .r .tb {{ color:#9FB6CC; font-size:1.6vh; }}
-.savebar {{ font-size:1.4vh; }}
+.recent .r .tb {{ color:#9FB6CC; font-size:2.1vh; }}
+.savebar {{ font-size:1.9vh; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 </style>""", unsafe_allow_html=True)
 
 
@@ -429,12 +430,12 @@ def rod_badge(m, size):
 
 
 def sizes(n, pick):
-    """人數多時縮小字體，5–6 位也能完整顯示"""
-    if n <= (2 if pick else 3):
-        return 5.6, 3.0
-    if n <= (3 if pick else 4):
-        return 4.6, 2.6
-    return 3.8, 2.2
+    """人數多時縮小字體，5–6 位也能完整顯示（勾選畫面有按鈕與提示列，門檻較低）"""
+    if n <= (2 if pick else 4):
+        return 6.4, 3.6
+    if n <= (3 if pick else 6):
+        return 5.2, 3.1
+    return 4.2, 2.55
 
 
 def render_party_header(p, title, n_title=None):
@@ -463,7 +464,7 @@ def render_table(p):
         tbl = '<div class="none">未安排<br>請洽承辦人</div>'
     ps = ponds(active(p))
     if ps:
-        size = 7 if len(ps) == 1 else 5
+        size = 8.5 if len(ps) == 1 else 6
         pond = f'<div class="pnum" style="font-size:{size}vh">{"・".join(map(html.escape, ps))}</div>'
     else:
         pond = '<div class="pnone">陪釣（無蝦池）</div>'
@@ -526,18 +527,18 @@ def render_card(state):
     with st.container(key="card"):
         if kind == "idle":
             st.markdown('<div class="state" style="color:#9FB6CC">歡迎參加！</div>'
-                        f'<div class="pname" style="font-size:6vh;margin-top:4vh">'
+                        f'<div class="pname" style="font-size:7.5vh;margin-top:4vh">'
                         f'{"請刷卡報到" if roster.has_card else "請輸入工號報到"}</div>'
                         '<div class="psub" style="color:#9FB6CC;margin-top:2vh">報到後會顯示您的桌號與蝦池</div>',
                         unsafe_allow_html=True)
             return
         if kind == "err":
             st.markdown(f'<div class="state">✖　{v["title"]}</div>'
-                        f'<div class="pname" style="font-size:6vh;margin-top:4vh">{v["msg"]}</div>',
+                        f'<div class="pname" style="font-size:7.5vh;margin-top:4vh">{v["msg"]}</div>',
                         unsafe_allow_html=True)
             return
         if kind == "choices":
-            more = "（只列前 8 組，請輸入完整姓名）" if v["total"] > 8 else ""
+            more = f"（只列前 {MAX_CHOICES} 組，請輸入完整姓名）" if v["total"] > MAX_CHOICES else ""
             st.markdown(f'<div class="state">🔍　找到 {v["total"]} 組，請選擇{more}</div>',
                         unsafe_allow_html=True)
             for i, emp in enumerate(v["emps"]):
@@ -741,8 +742,9 @@ def main():
     state = current_state()
     sidebar(state)
 
-    h1, h2 = st.columns([3, 1])
+    h1, h_save, h2 = st.columns([2.2, 1.8, 1], vertical_alignment="center")
     h1.markdown(f'<h1 class="title">🦐 {EVENT_TITLE}</h1>', unsafe_allow_html=True)
+    save_ph = h_save.empty()          # Excel 寫回狀態，報到處理完才填入
     with h2:
         clock_and_timeout()
 
@@ -767,11 +769,11 @@ def main():
         render_recent(state)
     render_stats(state)
     if state["save_ok"] is False:
-        st.markdown(f'<div class="savebar" style="color:#F5B041">⚠ {state["save_msg"]}</div>',
-                    unsafe_allow_html=True)
+        save_ph.markdown(f'<div class="savebar" style="color:#F5B041">⚠ {state["save_msg"]}</div>',
+                         unsafe_allow_html=True)
     elif state["save_ok"]:
-        st.markdown(f'<div class="savebar" style="color:#58D68D">✔ {state["save_msg"]}</div>',
-                    unsafe_allow_html=True)
+        save_ph.markdown(f'<div class="savebar" style="color:#58D68D">✔ {state["save_msg"]}</div>',
+                         unsafe_allow_html=True)
     keep_focus_and_beep()
 
 
