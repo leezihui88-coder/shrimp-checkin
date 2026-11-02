@@ -12,7 +12,7 @@ from datetime import datetime
 from tkinter import filedialog, messagebox
 
 from checkin_core import (PLAN_COLOR, RESULT_COLS, CheckinLog, Roster, active, all_arrived,
-                          arrived, ponds, rod_count, show_id)
+                          arrived, ponds, previous_summary, rod_count, show_id)
 
 try:
     import winsound
@@ -715,7 +715,14 @@ class App(tk.Tk):
             self.after(SAVE_RETRY_SECONDS * 1000, self.retry_save)
 
     def on_close(self):
-        if not messagebox.askyesno("結束報到", "要結束報到程式嗎？", parent=self):
+        # 避免報到中被誤按關閉：警告圖示、預設按鈕是「否」
+        busy = "\n\n⚠ 目前有同仁正在報到（勾選畫面還沒確認）。" if self.pick else ""
+        if not messagebox.askyesno(
+                "確定要關閉報到程式？",
+                "報到進行中，關閉後就無法刷卡 / 輸入工號報到。" + busy +
+                "\n\n真的要關閉嗎？（不確定請按「否」）",
+                icon="warning", default="no", parent=self):
+            self.entry.focus_force()
             return
         if self.pick and self.pick["mode"] == "pick":   # 勾選中的報到先確認；修改中的不自動儲存
             self.confirm_pick()
@@ -751,6 +758,25 @@ def main():
     msg = [f"已載入 {len(roster.parties)} 位同仁，共 {total} 位參加人",
            f"報到結果會寫回報名表最後面的「{'、'.join(RESULT_COLS)}」欄",
            f"原始檔已備份：備份\\{os.path.basename(bak)}"]
+
+    # 有之前留下的報到資料：預設清除重新開始；活動中誤關程式時可選「否」接續
+    n_old, last = previous_summary(roster)
+    fresh = False
+    if n_old:
+        fresh = messagebox.askyesno(
+            "發現之前的報到資料",
+            f"報名表 / 報到紀錄裡已有 {n_old} 位報到（最後一筆 {last:%m/%d %H:%M}）。\n\n"
+            "是：清除，全部重新開始（舊資料會先移到「備份」資料夾）\n"
+            "否：接續之前的報到（活動進行中不小心關掉程式時選這個）",
+            icon="warning", default="yes")
+        if fresh:
+            old_csv = log.archive(os.path.join(APP_DIR, "備份"))
+            roster.reset_all()
+            restored = 0
+            msg.append("已清除之前的報到資料，全部重新開始"
+                       + (f"（舊紀錄：備份\\{os.path.basename(old_csv)}）" if old_csv else ""))
+        else:
+            msg.append(f"接續之前的報到：已報到 {n_old} 位")
     if not roster.has_card:
         msg.append("報名表沒有「卡號」欄位，目前只能用工號或姓名報到")
     if restored:
@@ -760,7 +786,7 @@ def main():
     messagebox.showinfo("報名表載入完成", "\n".join(msg))
     root.destroy()
     app = App(roster, log)
-    if restored:      # CSV 裡有、Excel 還沒寫到的，開啟時補寫
+    if restored or fresh:      # 補寫 CSV 裡有、Excel 還沒寫到的；或清空 Excel 的報到欄
         app.save_excel()
     app.mainloop()
 

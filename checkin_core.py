@@ -73,6 +73,12 @@ def all_arrived(p):
     return bool(act) and all(m["報到時間"] for m in act)
 
 
+def previous_summary(roster):
+    """之前留下的報到資料：(已報到人數, 最後報到時間)；沒有時人數為 0"""
+    times = [m["報到時間"] for p in roster.parties for m in p["成員"] if m["報到時間"]]
+    return len(times), (max(times) if times else None)
+
+
 def show_id(p):
     """畫面顯示用的工號；沒有工號的顯示「無工號」"""
     return "無工號" if p["工號"].startswith(NO_ID_PREFIX) else p["工號"]
@@ -284,6 +290,13 @@ class Roster:
         p["last_confirm"] = 0
         return added, removed
 
+    def reset_all(self):
+        """清除所有報到狀態（重新開始用）"""
+        for p in self.parties:
+            p["last_confirm"] = 0
+            for m in p["成員"]:
+                m["報到時間"], m["報到方式"] = None, ""
+
     def backup(self, folder):
         """開始報到前先備份原始報名表"""
         os.makedirs(folder, exist_ok=True)
@@ -336,6 +349,18 @@ class CheckinLog:
         self._ensure()
         with open(self.path, "a", newline="", encoding="utf-8-sig") as f:
             csv.DictWriter(f, LOG_FIELDS).writerow({k: kw.get(k, "") for k in LOG_FIELDS})
+
+    def archive(self, folder):
+        """把目前的紀錄檔搬到備份資料夾，再建一個空的（重新開始用），回傳備份檔路徑"""
+        dst = None
+        if os.path.exists(self.path) and len(self.rows()) > 0:
+            os.makedirs(folder, exist_ok=True)
+            dst = os.path.join(folder, f"報到紀錄_{datetime.now():%Y%m%d_%H%M%S}.csv")
+            shutil.move(self.path, dst)
+        elif os.path.exists(self.path):
+            os.remove(self.path)
+        self._ensure()
+        return dst
 
     def rows(self):
         """讀出全部紀錄（檔案不存在時回傳空清單）"""

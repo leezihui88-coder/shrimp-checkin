@@ -14,7 +14,7 @@ from datetime import datetime
 import streamlit as st
 
 from checkin_core import (PLAN_COLOR, CheckinLog, Roster, active, all_arrived, arrived,
-                          ponds, rod_count, show_id)
+                          ponds, previous_summary, rod_count, show_id)
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_XLSX = os.path.join(APP_DIR, "釣蝦報名表.xlsx")      # 本機模式
@@ -56,11 +56,48 @@ def load_state(path, log_path):
         bak = roster.backup(os.path.join(os.path.dirname(path), "備份"))
         log = CheckinLog(log_path)
         restored = log.restore(roster)
+        n_old, last = previous_summary(roster)
         reg["state"] = {"roster": roster, "log": log, "path": path, "backup": bak,
-                        "restored": restored, "save_ok": None, "save_msg": ""}
+                        "restored": restored, "save_ok": None, "save_msg": "",
+                        # 有之前留下的報到資料：開始報到前先問要清除還是接續
+                        "ask_fresh": n_old > 0, "old_count": n_old, "old_last": last}
         if restored:
             save_excel(reg["state"])
     return reg["state"]
+
+
+def start_fresh(state):
+    """清除之前的報到資料、全部重新開始（舊紀錄先移到備份資料夾）"""
+    with registry()["lock"]:
+        state["log"].archive(os.path.join(os.path.dirname(state["path"]), "備份"))
+        state["roster"].reset_all()
+        save_excel(state)
+        state["ask_fresh"] = False
+    set_view(kind="idle")
+
+
+def keep_old(state):
+    """接續之前的報到（活動中不小心關掉程式時用）"""
+    state["ask_fresh"] = False
+    set_view(kind="idle")
+
+
+def render_fresh_choice(state):
+    """開啟時發現舊的報到資料：讓報到人員選擇（所有電腦共用這個選擇）"""
+    inject_css(STATE_COLOR["dup"])
+    with st.container(key="card"):
+        st.markdown(f'<div class="state">⚠　發現之前的報到資料</div>'
+                    f'<div class="pname" style="font-size:5vh;margin-top:2vh">'
+                    f'已有 {state["old_count"]} 位報到（最後一筆 {state["old_last"]:%m/%d %H:%M}）</div>'
+                    '<div class="psub" style="margin-top:2vh">活動開始前請選「清除，重新開始」；'
+                    '活動中不小心關掉網頁或程式時，請選「接續之前的報到」</div>',
+                    unsafe_allow_html=True)
+        _, c1, c2, _ = st.columns([0.6, 1.4, 1.4, 0.6])
+        c1.button("🧹 清除，重新開始", type="primary", on_click=start_fresh, args=(state,),
+                  width="stretch")
+        c2.button("↩ 接續之前的報到", on_click=keep_old, args=(state,), width="stretch")
+        st.markdown('<div class="note">清除時舊資料會先移到「備份」資料夾，不會直接刪掉</div>',
+                    unsafe_allow_html=True)
 
 
 def save_excel(state):
@@ -411,6 +448,14 @@ function focusScan() {{
 }}
 focusScan();
 if (!window.__scanTimer) window.__scanTimer = setInterval(focusScan, 600);
+// 關閉分頁 / 重新整理 / 離開網頁時跳出瀏覽器提醒，避免報到中被誤關
+// 監聽器要裝在主頁面自己的 script 裡；這個 iframe 每次更新都會重建，裝在這裡會失效
+if (!window.parent.__leaveGuard) {{
+  const s = doc.createElement('script');
+  s.textContent = "window.__leaveGuard = true;" +
+    "window.addEventListener('beforeunload', function (e) {{ e.preventDefault(); e.returnValue = ''; }});";
+  doc.head.appendChild(s);
+}}
 {sound}
 </script>""", height=1)
 
@@ -720,15 +765,7 @@ def sidebar(state):
     with sb.expander("重設報到（測試用）"):
         st.caption("清除所有報到紀錄（CSV 與 Excel 的報到欄），活動當天請勿使用。")
         if st.checkbox("我確定要清除") and st.button("清除所有報到", type="primary"):
-            with registry()["lock"]:
-                for p in roster.parties:
-                    p["last_confirm"] = 0
-                    for m in p["成員"]:
-                        m["報到時間"], m["報到方式"] = None, ""
-                os.remove(state["log"].path)
-                state["log"] = CheckinLog(state["log"].path)
-                save_excel(state)
-            set_view(kind="idle")
+            start_fresh(state)     # 舊紀錄移到備份資料夾後清空
             st.rerun()
 
 
@@ -767,15 +804,19 @@ def main():
     roster = state["roster"]
     main_col, side_col = st.columns([3.2, 1])
     with main_col:
-        hint = "請刷卡，或輸入工號 / 姓名後按 Enter" if roster.has_card \
-            else "請輸入工號或姓名後按 Enter"
-        with st.form("scan", clear_on_submit=True, border=False):
-            st.markdown(f'<div class="hint">{hint}</div>', unsafe_allow_html=True)
-            text = st.text_input(INPUT_LABEL, label_visibility="collapsed")
-            submitted = st.form_submit_button("送出")
-        if submitted:
-            process(state, text)
-        render_card(state)
+        if state["ask_fresh"]:
+            # 還沒決定要清除或接續舊資料前，不開放報到
+            render_fresh_choice(state)
+        else:
+            hint = "請刷卡，或輸入工號 / 姓名後按 Enter" if roster.has_card \
+                else "請輸入工號或姓名後按 Enter"
+            with st.form("scan", clear_on_submit=True, border=False):
+                st.markdown(f'<div class="hint">{hint}</div>', unsafe_allow_html=True)
+                text = st.text_input(INPUT_LABEL, label_visibility="collapsed")
+                submitted = st.form_submit_button("送出")
+            if submitted:
+                process(state, text)
+            render_card(state)
     with side_col:
         render_recent(state)
     render_stats(state)
